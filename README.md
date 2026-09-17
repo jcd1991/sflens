@@ -54,7 +54,7 @@ npm run typecheck
 npm run build
 ```
 
-The included CI workflow also runs Salesforce Code Analyzer. Its runtime-log gate only analyzes `.log`/`.txt` files that a repository owner intentionally commits; debug logs should normally remain outside the repository because they can contain sensitive data.
+The included CI workflow also runs Salesforce Code Analyzer against authored source directories and uploads SARIF/HTML reports. That report is currently non-blocking while its TypeScript rule profile is tuned; tests, type checks, builds, and the runtime-log gate remain blocking. The runtime-log gate only analyzes `.log`/`.txt` files that a repository owner intentionally commits; debug logs should normally remain outside the repository because they can contain sensitive data.
 
 ## License
 
