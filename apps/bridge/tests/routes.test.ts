@@ -33,6 +33,9 @@ describe("bridge routes", () => {
     const response = await get("/health");
     expect(response.status).toBe(200);
     expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+    const hosted = await fetch(`${base}/health`, { headers: { Origin: "https://jcd1991.github.io" } });
+    expect(hosted.headers.get("access-control-allow-origin")).toBe("https://jcd1991.github.io");
+    expect(hosted.headers.get("access-control-allow-private-network")).toBe("true");
   });
   it("starts browser authorization without exposing a client setup flow", async () => {
     const response = await fetch(`${base}/oauth/start`, { credentials: "include" });

@@ -8,6 +8,12 @@ const exec = promisify(execFile),
   token = randomUUID(),
   port = Number(process.env.SFLENS_BRIDGE_PORT || 8787),
   origin = process.env.SFLENS_WEB_ORIGIN || "http://localhost:5173";
+const allowedOrigins = new Set(
+  (process.env.SFLENS_WEB_ORIGINS || `${origin},https://jcd1991.github.io`)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 const oauthClientId = process.env.SFLENS_SALESFORCE_CLIENT_ID || "";
 const oauthLoginUrl = process.env.SFLENS_SALESFORCE_LOGIN_URL || "https://login.salesforce.com";
 const oauthSessions = new Map<string, { org: any; connection: Connection }>();
@@ -161,10 +167,14 @@ function logQuery(url: URL) {
   return `SELECT Id,StartTime,LogUser.Name,Operation,Status,LogLength FROM ApexLog${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY StartTime DESC LIMIT ${limit}`;
 }
 async function route(req: http.IncomingMessage, res: http.ServerResponse) {
-  res.setHeader("Access-Control-Allow-Origin", origin);
+  const requestOrigin = String(req.headers.origin || "");
+  if (allowedOrigins.has(requestOrigin)) res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+  else if (!requestOrigin) res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Headers", "x-sflens-token,x-sflens-session,content-type");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Private-Network", "true");
   if (req.method === "OPTIONS") return send(res, 204, {});
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
   if (url.pathname === "/oauth/start") {
