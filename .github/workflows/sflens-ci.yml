@@ -1,0 +1,42 @@
+name: SF Lens CI
+on: [push, pull_request]
+permissions:
+  contents: read
+  security-events: write
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Fail on critical debug-log findings
+        shell: bash
+        run: |
+          shopt -s nullglob
+          logs=(logs/**/*.log logs/**/*.txt)
+          if ((${#logs[@]})); then
+            if [[ -n "${SFLENS_BASELINE_LOG:-}" ]]; then node scripts/check-critical-logs.mjs --baseline "$SFLENS_BASELINE_LOG" "${logs[@]}"; else node scripts/check-critical-logs.mjs "${logs[@]}"; fi
+          else echo "No committed debug logs found; skipping runtime-log gate."; fi
+      - name: Run Salesforce Code Analyzer
+        run: |
+          npm install --global @salesforce/cli
+          sf code-analyzer run --workspace . --output-file code-analyzer.sarif --output-file code-analyzer.html --severity-threshold 2
+      - name: Upload SARIF
+        if: always() && hashFiles('code-analyzer.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: code-analyzer.sarif
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sflens-analysis
+          path: |
+            code-analyzer.sarif
+            code-analyzer.html

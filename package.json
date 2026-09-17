@@ -1,0 +1,16 @@
+{
+  "name": "sflens",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A local-first Salesforce debug log explorer and MCP debugging interface",
+  "license": "MIT",
+  "engines": { "node": ">=24" },
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "npm run dev -w @sflens/web",
+    "build": "npm run build -w @sflens/core && npm run build -w @sflens/bridge && npm run build -w @sflens/mcp && npm run build -w @sflens/web",
+    "test": "npm run test -w @sflens/core && npm run test -w @sflens/bridge && npm run test -w @sflens/web",
+    "typecheck": "npm run typecheck -ws",
+    "lint": "npm run lint -ws"
+  }
+}
