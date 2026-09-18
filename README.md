@@ -2,11 +2,14 @@
 
 ## Salesforce debug intelligence for the moment an incident gets noisy
 
-**See the signal. Understand the cause. Share evidence safely.**
+**See the signal. Understand the cause. Share evidence safely.**<br>
+A local-first Salesforce debug workspace for Apex and Flow incidents — with evidence-backed diagnosis instead of blind guessing.
+
+[Live demo](https://jcd1991.github.io/sflens/) · [Quick start](#run-it-locally) · [Authorization flow](#authorization-flow) · [Architecture & security](#architecture-at-a-glance)
 
 [![CI](https://github.com/jcd1991/sflens/actions/workflows/sflens-ci.yml/badge.svg)](https://github.com/jcd1991/sflens/actions/workflows/sflens-ci.yml) [![Live demo](https://img.shields.io/badge/live%20demo-GitHub%20Pages-62e6a7)](https://jcd1991.github.io/sflens/)
 
-SF Lens is a local-first Salesforce debug-log explorer for developers. It parses Apex and Flow logs in the browser, explains governor-limit pressure and failure patterns, connects related transactions using evidence already present in the logs, and packages a redacted diagnosis for a teammate or AI coding assistant.
+SF Lens parses Apex and Flow logs in the browser, explains governor-limit pressure and failure patterns, connects related transactions using evidence already present in the logs, and packages a redacted diagnosis for a teammate or AI coding assistant.
 
 The public site is a safe Demo/Upload experience. Connected Salesforce access stays local through a loopback bridge and Salesforce CLI.
 
