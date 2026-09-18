@@ -1,13 +1,18 @@
+<div align="center">
+
 # SF Lens
 
-## Salesforce debug intelligence for the moment an incident gets noisy
+<hr>
 
-**See the signal. Understand the cause. Share evidence safely.**<br>
-A local-first Salesforce debug workspace for Apex and Flow incidents — with evidence-backed diagnosis instead of blind guessing.
+### **See the signal. Understand the cause. Share evidence safely.**
+
+<p><strong>A local-first Salesforce debug intelligence workspace for Apex and Flow incidents — with evidence-backed diagnosis instead of blind guessing.</strong></p>
+
+[![CI](https://img.shields.io/badge/CI-PASSING-2ea043?style=flat-square&labelColor=4b5563)](https://github.com/jcd1991/sflens/actions/workflows/sflens-ci.yml) [![SALESFORCE](https://img.shields.io/badge/SALESFORCE-APEX%20%2B%20FLOW-1476d4?style=flat-square&labelColor=4b5563)](#feature-tour) [![SECURITY](https://img.shields.io/badge/SECURITY-LOCAL%20%2B%20REDACTED-16b894?style=flat-square&labelColor=4b5563)](#security-posture-and-deliberate-boundaries) [![MCP](https://img.shields.io/badge/MCP-COMPANION%20SERVER-7c3aed?style=flat-square&labelColor=4b5563)](#mcp-companion)
 
 [Live demo](https://jcd1991.github.io/sflens/) · [Quick start](#run-it-locally) · [Authorization flow](#authorization-flow) · [Architecture & security](#architecture-at-a-glance)
 
-[![CI](https://github.com/jcd1991/sflens/actions/workflows/sflens-ci.yml/badge.svg)](https://github.com/jcd1991/sflens/actions/workflows/sflens-ci.yml) [![Live demo](https://img.shields.io/badge/live%20demo-GitHub%20Pages-62e6a7)](https://jcd1991.github.io/sflens/)
+</div>
 
 SF Lens parses Apex and Flow logs in the browser, explains governor-limit pressure and failure patterns, connects related transactions using evidence already present in the logs, and packages a redacted diagnosis for a teammate or AI coding assistant.
 
