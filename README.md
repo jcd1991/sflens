@@ -1,30 +1,82 @@
 # SF Lens
 
-> Read-only Salesforce debug-log intelligence for developers.
+## Salesforce debug intelligence for the moment an incident gets noisy
 
-SF Lens turns noisy Salesforce logs into a focused incident workspace. It highlights governor-limit pressure, Flow failures, database work, exceptions, and related transactions—with evidence lines you can inspect, copy, or share with an AI coding assistant.
+**See the signal. Understand the cause. Share evidence safely.**
 
-**Try the hosted demo:** [jcd1991.github.io/sflens](https://jcd1991.github.io/sflens/)
+[![CI](https://github.com/jcd1991/sflens/actions/workflows/sflens-ci.yml/badge.svg)](https://github.com/jcd1991/sflens/actions/workflows/sflens-ci.yml) [![Live demo](https://img.shields.io/badge/live%20demo-GitHub%20Pages-62e6a7)](https://jcd1991.github.io/sflens/)
 
-The hosted site is safe for demos and uploads. Connected Salesforce access runs locally on your computer through the loopback bridge.
+SF Lens is a local-first Salesforce debug-log explorer for developers. It parses Apex and Flow logs in the browser, explains governor-limit pressure and failure patterns, connects related transactions using evidence already present in the logs, and packages a redacted diagnosis for a teammate or AI coding assistant.
 
-## What you can do
+The public site is a safe Demo/Upload experience. Connected Salesforce access stays local through a loopback bridge and Salesforce CLI.
 
-| Feature | What it provides |
-| --- | --- |
-| Log explorer | Searchable, line-numbered Apex logs with event badges and evidence navigation |
-| Flow diagnosis | Flow interview paths, failed elements, loop/database pressure, recursion signals, and incomplete interviews |
-| Governor limits | CPU, heap, SOQL, DML, callouts, query rows, and budget remaining |
-| Related transactions | Evidence-backed links between synchronous and asynchronous logs, with Exact, Strong, or Possible confidence |
-| Performance comparison | Compare two logs and see metric deltas plus remaining budgets |
-| AI handoff | Copy a redacted diagnosis prompt for Cursor, Devin, ChatGPT, or another review tool |
-| Incident bundles | Export redacted HTML, JSON, or SARIF with severity, remediation notes, and evidence lines |
-| Debug capture | Temporarily enable or disable the connected user’s trace flag from the UI |
-| MCP | Use the same bounded analysis tools from an MCP-compatible client |
+## The 30-second story
 
-## Quick start
+When a Salesforce transaction fails, the useful question is not just “what line crashed?” It is:
 
-SF Lens requires **Node 24 LTS**.
+> What happened, what evidence proves it, and what is the smallest safe next step?
+
+SF Lens turns a raw log into a reviewable incident path:
+
+```text
+Salesforce log
+      ↓
+redacted timeline + deterministic parser
+      ↓
+findings, Flow path, limits, and related transactions
+      ↓
+copy for AI · export HTML/JSON/SARIF · compare with a baseline
+```
+
+It is intentionally bounded. SF Lens does not become a hosted log archive, execute Apex, deploy metadata, or invent causality that the logs cannot prove.
+
+## What you can demo
+
+| Moment | What someone sees | Why it matters |
+| --- | --- | --- |
+| 1 · Explore | A curated synthetic log with an N+1 query pattern and limit failure | Learn the interface without connecting an org |
+| 2 · Connect | Salesforce’s normal browser authorization flow | Read existing `ApexLog` records without entering credentials into the app |
+| 3 · Investigate | Findings, evidence lines, Flow breadcrumbs, and governor budgets | Move from “the log is huge” to a focused diagnosis |
+| 4 · Compare | Baseline → current CPU, heap, SOQL, DML, callout, and query-row deltas | See whether a change improved or regressed runtime pressure |
+| 5 · Share | Redacted AI prompt, HTML, JSON, or SARIF bundle | Hand off useful evidence without blindly exposing raw debug output |
+| 6 · Automate | Local stdio MCP tools for the same bounded analysis | Bring the diagnosis into Cursor, Devin, ChatGPT, or another MCP client |
+
+## Feature tour
+
+### Flow-first diagnosis
+
+SF Lens recognizes Flow interview and element lifecycle markers and builds evidence-backed paths such as:
+
+```text
+Opportunity Flow → Loop Contacts → Update Records
+```
+
+It can surface failed elements, database work observed inside loops, subflow/recursion signals, Flow-specific limit pressure, and interviews that started without a matching finish marker when the log is not truncated. Findings always point back to source lines.
+
+### Governor-limit and performance analysis
+
+The Limits panel shows observed CPU, heap, SOQL, DML, callout, and query-row usage. The Compare panel accepts a second log and reports deltas plus the remaining budget when Salesforce exposed a maximum in the log.
+
+### Related transactions
+
+SF Lens groups candidate transactions using native evidence such as request IDs, async job IDs, Flow interview IDs, class or operation names, users, and timestamps:
+
+- **Exact** — a native identifier is shared;
+- **Strong** — a producer/enqueue identifier matches an async job or candidate transaction;
+- **Possible** — user and execution context are nearby, but causality is not proven.
+
+Possible matches are labeled as heuristic. If no native relationship is observable, SF Lens says so.
+
+### Evidence you can take with you
+
+- Copy one redacted log line with its line number.
+- Shift-click to select a range, then copy the selected lines.
+- Use **Copy for AI** to create a redacted diagnosis prompt with findings, limits, remediation, and evidence.
+- Export **HTML**, **JSON**, or **SARIF** incident bundles with severity, remediation notes, and evidence lines.
+
+## Run it locally
+
+Requires **Node 24 LTS**.
 
 ```bash
 npm ci
@@ -35,89 +87,93 @@ Open the Vite URL printed in the terminal.
 
 ### Demo mode
 
-Demo mode loads a small, synthetic log that demonstrates an N+1 query pattern and a governor-limit failure. It is useful for learning the interface and does not contact Salesforce.
+Demo mode loads a synthetic fixture. It does not contact Salesforce and is the fastest way to see the parser, findings, limits, Flow UI, copy actions, and exports.
 
 ### Upload mode
 
-Choose **Upload log** and select a `.log` or `.txt` file up to 25 MB. The file is parsed in your browser and stays in browser memory for the current session; it is not uploaded to SF Lens servers.
+Click **Upload log** and select a `.log` or `.txt` file up to 25 MB. The file is parsed locally in the browser and is not sent to an SF Lens server.
 
 ## Connect a Salesforce org
 
-Connected mode reads existing `ApexLog` records through Salesforce CLI and the Tooling API. SF Lens does not need a Connected App, client ID, password, or manually entered bridge token for the normal local flow.
+Connected mode reads existing Salesforce `ApexLog` records through a local bridge. The normal path uses Salesforce CLI’s browser authorization; no Connected App, client ID, password, bridge URL, or startup token needs to be entered into the web UI.
 
-### 1. Start the local bridge
+### Authorization flow
 
-From the project folder, open a second terminal and run:
+1. Start the bridge in a second terminal:
 
-```bash
-npm run dev -w @sflens/bridge
-```
+   ```bash
+   npm run dev -w @sflens/bridge
+   ```
 
-Keep this terminal running while SF Lens is connected. The bridge binds to `127.0.0.1` and prints a short-lived startup token for local tooling use.
-
-### 2. Authorize in the browser
-
-1. Open SF Lens locally, or open the hosted site while the local bridge is running.
-2. Click **Connected**.
-3. Choose **Authorize Salesforce**.
-4. Salesforce CLI opens Salesforce’s normal login and authorization page.
-5. Sign in to the personal or Developer Edition org you want to test.
+2. Open SF Lens locally, or open [the hosted site](https://jcd1991.github.io/sflens/) while the bridge is running.
+3. Click **Connected**, then **Authorize Salesforce**.
+4. Salesforce CLI opens Salesforce’s normal login and authorization screen.
+5. Sign in to the personal or Developer Edition org you want to inspect.
 6. Return to SF Lens. The app discovers the newly authorized local org and loads recent logs.
 
-Salesforce CLI retains the local authorization, so you generally do not need to re-enter Salesforce credentials every time. The browser’s bridge session is temporary; if it expires, authorize again while the bridge is running.
+Keep the bridge terminal running while connected. Salesforce CLI retains its local authorization, so credentials generally do not need to be entered again. The SF Lens browser session is temporary and can be renewed without changing Salesforce data.
 
-### 3. Generate a log
+### Generate a useful log
 
-Salesforce only creates debug logs when a trace flag is active. In Connected mode, click **Enable debug logging** to create a temporary `USER_DEBUG` trace flag for the authenticated user. It lasts 15 minutes by default. Reproduce the issue in Salesforce, wait briefly for the log to appear, and let SF Lens auto-refresh the recent-log list.
+Salesforce creates debug logs only while a trace flag is active:
 
-Click **Disable debug logging** when finished. This is the only connected action that changes org configuration; it creates or removes only the temporary user trace flag. SF Lens does not create records, deploy metadata, run Apex, or modify other trace flags.
+1. Select the authorized org in SF Lens.
+2. Click **Enable debug logging**.
+3. Reproduce the issue in Salesforce as the traced user.
+4. Wait a few seconds while SF Lens refreshes recent log summaries.
+5. Select the newest log and inspect Findings, Limits, Compare, or Related.
+6. Click **Disable debug logging** when finished.
 
-### Connected-mode controls
+The debug control creates a temporary `USER_DEBUG` trace flag for the authenticated user for 15 minutes by default. It does not create records, deploy metadata, run Apex, or modify unrelated trace flags.
 
-- **Org selector:** choose the authorized local org.
-- **Refresh logs:** immediately retrieve the latest records.
-- **Filters:** narrow by user, operation, status, or time window.
-- **Search all logs:** search the contents of up to 100 recent logs. Bodies are fetched only for the search and remain local.
-- **Auto-refresh:** connected log summaries refresh every five seconds.
-- **More:** open Compare baseline and CI/CD tools without crowding the main toolbar.
+### Connected controls
 
-## Reading a diagnosis
+- **Org selector** — choose the authorized local org.
+- **Refresh logs** — retrieve the latest summaries immediately.
+- **Filters** — narrow by user, operation, status, or time window.
+- **Search all logs** — search up to 100 recent log bodies, fetched only for the current search.
+- **Auto-refresh** — refresh recent-log summaries every five seconds.
+- **More** — open Compare baseline and CI/CD tools without crowding the primary toolbar.
 
-Select a log from the left panel. The center console shows the redacted source with stable line numbers. The right panel contains:
+## Architecture at a glance
 
-- **Findings** — deterministic findings with severity, remediation, and exact evidence lines.
-- **Limits** — observed usage and governor budgets.
-- **Compare** — CPU, heap, SOQL, DML, callout, and query-row differences between a baseline and the selected log.
-- **Related** — transaction candidates and the evidence behind each relationship.
+```text
+┌──────────────────────────────┐
+│ React/Vite web app            │
+│ Demo · Upload · Connected UI  │
+└──────────────┬───────────────┘
+               │ localhost / approved Pages origin
+┌──────────────▼───────────────┐
+│ Local loopback bridge         │
+│ Salesforce CLI + Tooling API │
+│ bounded read-only routes     │
+└──────────────┬───────────────┘
+               │ existing ApexLog records only
+        ┌──────▼──────┐
+        │ Salesforce  │
+        └─────────────┘
 
-Click a finding, Flow path, or evidence reference to jump to its source line. Use **Copy** on one line, or Shift-click two lines to select a range and use **Copy N selected**. **Copy for AI** produces a redacted prompt containing the diagnosis, limits, remediation, and evidence.
+packages/core → parser, contracts, findings, redaction, comparison, fixtures
+apps/mcp      → local stdio MCP adapter over the same bounded interfaces
+```
 
-Related transactions use identifiers already present in Salesforce logs and metadata—such as request IDs, async job IDs, Flow interview IDs, class/operation names, users, and timestamps. SF Lens never invents causality: Possible matches are labeled heuristic, and an absent native identifier is reported as unconfirmed.
+### Package layout
 
-## Exports and CI/CD
+- `packages/core` — shared contracts, parser, deterministic rules, redaction, comparison, correlation, and fixtures.
+- `apps/web` — React/Vite explorer, Demo/Upload/Connected UI, exports, and AI copy actions.
+- `apps/bridge` — local Salesforce CLI and Tooling API reader. It does not persist logs or records.
+- `apps/mcp` — local stdio MCP server using the fixture by default or connected bridge data when configured.
 
-The Findings panel can export a redacted incident bundle as:
+## MCP companion
 
-- **HTML** for a readable incident handoff;
-- **JSON** for scripts and downstream analysis;
-- **SARIF** for code-scanning workflows.
-
-Exports include finding severity, remediation notes, and evidence lines. Review any export before sharing it outside your organization.
-
-The repository CI workflow runs tests, type checks, builds, the optional committed-log gate, and Salesforce Code Analyzer. It uploads SARIF and HTML reports as artifacts. Code Analyzer scans authored TypeScript/TSX source only; compiled bundles, CSS, and engines requiring Apex/Flow or Java runtimes are excluded. Analyzer findings are currently reported but non-blocking while the TypeScript rule profile is tuned. See [`code-analyzer.yml`](code-analyzer.yml).
-
-For pull-request use, upload logs as a separate CI artifact or run the parser against files in the workflow. Do not commit production logs unless they have been reviewed and redacted.
-
-## MCP server
-
-Build and run the local stdio MCP server:
+Build and run the local stdio server:
 
 ```bash
 npm run build -w @sflens/mcp
 node apps/mcp/dist/index.js
 ```
 
-With no bridge configuration, MCP uses the synthetic demo fixture. To use connected logs, start the bridge and provide its URL, token, and an authorized org alias:
+Without bridge configuration, MCP uses the synthetic fixture. For connected analysis:
 
 ```bash
 SFLENS_BRIDGE_URL=http://127.0.0.1:8787 \
@@ -132,52 +188,54 @@ The convenience launcher starts both local processes and passes the short-lived 
 node scripts/sflens-mcp-local.mjs
 ```
 
-Available tools include `list_debug_logs`, `get_log_summary`, `get_log_excerpt`, `search_debug_logs`, `analyze_debug_log`, `compare_debug_logs`, `create_reproduction_checklist`, and `export_incident_bundle`. All requests are bounded and read-only; redaction is enabled by default.
+Available tools include `list_debug_logs`, `get_log_summary`, `get_log_excerpt`, `search_debug_logs`, `analyze_debug_log`, `compare_debug_logs`, `create_reproduction_checklist`, and `export_incident_bundle`.
 
-## Privacy and security
+All tools are bounded, redaction-aware, and read-only with respect to Salesforce data. The MCP server does not enable logging, change records, deploy metadata, or execute Apex.
 
-- Credentials and Salesforce access tokens stay in local bridge memory or Salesforce CLI’s local authentication store.
-- OAuth uses a local HttpOnly session cookie and PKCE when an External Client App is configured.
-- Tokens are never placed in URLs, `localStorage`, rendered errors, or build output.
-- Raw logs stay in browser memory and are redacted before display, copy, or export.
-- The bridge accepts localhost and the published GitHub Pages origin by default. Set `SFLENS_WEB_ORIGINS` to a comma-separated allowlist for a fork or custom domain.
-- The public GitHub Pages deployment supports Demo and Upload modes only. Connected mode requires the local bridge.
-- The ignored `.sflens-test-org.json` file is for local testing only and must never be committed.
+## Security posture and deliberate boundaries
+
+- Salesforce credentials are handled by Salesforce CLI’s local authorization flow.
+- OAuth access tokens remain in local bridge memory or Salesforce CLI’s local store.
+- Connected sessions use a local HttpOnly cookie; tokens are not put in URLs, `localStorage`, rendered errors, or build output.
+- Raw log bodies remain in browser memory and are redacted before display, copy, or export.
+- The bridge binds to `127.0.0.1` and allows localhost plus the published GitHub Pages origin by default. Set `SFLENS_WEB_ORIGINS` for a fork or custom domain.
+- GitHub Pages is static and supports Demo/Upload only; Connected mode requires the local bridge.
+- The ignored `.sflens-test-org.json` file is local test configuration and must never be committed.
+- EventLogFile observability is intentionally not included in this release; retention and availability depend on org type and Event Monitoring entitlement.
+
+SF Lens does not provide a hosted log archive, shared backend, automatic replay, generic recovery, arbitrary SOQL, arbitrary Apex execution, metadata deployment, or an embedded LLM.
 
 ## Troubleshooting
 
 ### “Failed to fetch”
 
-Confirm that the local bridge terminal is still running. If you are using the hosted site, confirm that the bridge includes `https://jcd1991.github.io` in its allowed origins, then reload the page and reconnect.
+Confirm that the local bridge is still running. When using the hosted site, confirm that `https://jcd1991.github.io` is in the bridge’s allowed origins, then reload and reconnect.
 
 ### `OAUTH_NOT_CONFIGURED`
 
-Use the normal **Authorize Salesforce** flow with the local bridge. A configured External Client App is only needed for the optional direct PKCE OAuth path; it is not required for Salesforce CLI authorization.
+Use **Authorize Salesforce** with the local bridge. A separately configured External Client App is only needed for the optional direct PKCE OAuth path; it is not required for Salesforce CLI authorization.
 
 ### `localhost:1717/OauthSuccess` or connection refused
 
-That address is Salesforce CLI’s local authorization callback listener. Keep the bridge/CLI process running, finish the Salesforce authorization page, and retry. The callback is not a public SF Lens endpoint.
+That is Salesforce CLI’s local callback listener. Keep the bridge/CLI process running, finish the Salesforce authorization page, and retry. It is not a public SF Lens endpoint.
 
 ### No logs appear
 
-Enable a trace flag, reproduce the action as the traced user, wait a few seconds, and click **Refresh logs**. Salesforce log availability and retention depend on org limits and trace settings.
+Enable a trace flag, reproduce the action as the traced user, wait a few seconds, and click **Refresh logs**. Salesforce log availability and retention depend on trace settings and org limits.
 
-## Project layout
+## CI and portfolio proof
 
-```text
-packages/core   Parser, contracts, deterministic findings, redaction, comparison, fixtures
-apps/web        React/Vite explorer, Demo, Upload, Connected UI, exports
-apps/bridge     Local Salesforce CLI and Tooling API reader
-apps/mcp        Local stdio MCP server
-```
-
-## Local verification
+Every push and pull request runs:
 
 ```bash
 npm test
 npm run typecheck
 npm run build
 ```
+
+The workflow also runs Salesforce Code Analyzer against authored TypeScript/TSX source and uploads SARIF/HTML reports. Compiled bundles, CSS, and engines requiring Apex/Flow or Java runtimes are excluded; see [`code-analyzer.yml`](code-analyzer.yml). Analyzer findings are currently reported but non-blocking while the TypeScript rule profile is tuned. Tests, type checks, builds, and the optional committed-log gate remain blocking.
+
+Before publishing, confirm that real logs, screenshots, org usernames, OAuth URLs, `.env` files, Salesforce session files, and `.sflens-test-org.json` are not staged.
 
 ## License
 
