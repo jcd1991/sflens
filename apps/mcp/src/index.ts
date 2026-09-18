@@ -1,7 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { comparePerformance, correlateTransactions, demoLog, incidentBundle, parseLog, redact, type ParsedLog, type RemoteLogSummary } from "@sflens/core";
+import { comparePerformance, demoLog, incidentBundle, parseLog, redact, type ParsedLog, type RemoteLogSummary } from "@sflens/core";
 
 const bridge = process.env.SFLENS_BRIDGE_URL;
 const token = process.env.SFLENS_BRIDGE_TOKEN;

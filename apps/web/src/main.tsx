@@ -549,7 +549,16 @@ export function App() {
               {visible.slice(0, 350).map(({ line, i }) => (
               <div
                 key={i}
+                role="button"
+                tabIndex={0}
                 className={"line " + (i + 1 === selected ? "picked " : "") + (selectedLines.includes(i + 1) ? "evidence-selected" : "")}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelected(i + 1);
+                    setSelectedLines([i + 1]);
+                  }
+                }}
                 onClick={(event) => {
                   const lineNumber = i + 1;
                   if (event.shiftKey) {
@@ -655,7 +664,18 @@ export function App() {
                 {parsed.spans
                   .filter((s) => s.kind === "FLOW")
                   .map((s) => (
-                    <div key={s.id} onClick={() => setSelected(s.startLine)}>
+                    <div
+                      key={s.id}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelected(s.startLine);
+                        }
+                      }}
+                      onClick={() => setSelected(s.startLine)}
+                    >
                       {s.flow?.path?.join(" → ") || s.label}
                       <small>
                         line {s.startLine}

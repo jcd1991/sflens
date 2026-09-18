@@ -202,7 +202,7 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse) {
     } catch (e: any) { return send(res, 401, { error: e.message || "ORG_NOT_AUTHENTICATED" }); }
   }
   if (url.pathname === "/oauth/callback") {
-    try { const session = await oauthCallback(url); res.setHeader("set-cookie", `sflens_session=${session}; HttpOnly; SameSite=Lax; Path=/; Max-Age=3600`); res.statusCode = 302; res.setHeader("location", `${origin}/sflens/?oauth=success`); return res.end(); } catch (e: any) { res.statusCode = 302; res.setHeader("location", `${origin}/sflens/?oauth=error`); return res.end(); }
+    try { const session = await oauthCallback(url); res.setHeader("set-cookie", `sflens_session=${session}; HttpOnly; SameSite=Lax; Path=/; Max-Age=3600`); res.statusCode = 302; res.setHeader("location", `${origin}/sflens/?oauth=success`); return res.end(); } catch { res.statusCode = 302; res.setHeader("location", `${origin}/sflens/?oauth=error`); return res.end(); }
   }
   if (req.headers["x-sflens-token"] !== token && !oauthAuth(req))
     return send(res, 401, { error: "INVALID_STARTUP_TOKEN" });

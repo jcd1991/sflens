@@ -1,4 +1,4 @@
-import type { Finding, LimitSnapshot, ParsedLog } from "./index";
+import type { Finding, ParsedLog } from "./index";
 
 export type PerformanceMetricName = "cpuMs" | "heapBytes" | "soql" | "dml" | "callouts" | "queryRows";
 export interface PerformanceSnapshot { cpuMs?: number; heapBytes?: number; soql?: number; dml?: number; callouts?: number; queryRows?: number; }

@@ -531,7 +531,7 @@ export function correlateTransactions(
 }
 export const demoLog = `09:41:12.000 (100)|USER_INFO|[EXTERNAL]|clay@example.test\n09:41:12.010 (110)|EXECUTION_STARTED\n09:41:12.012 (112)|CODE_UNIT_STARTED|[EXTERNAL]|OpportunityTrigger on Opportunity trigger event BeforeUpdate\n09:41:12.100 (200)|SOQL_EXECUTE_BEGIN|[1]|Aggregations:0|SELECT Id,Name FROM Account WHERE Id = :tmp\n09:41:12.130 (230)|SOQL_EXECUTE_END|[1]|Rows:1\n09:41:12.140 (240)|SOQL_EXECUTE_BEGIN|[1]|SELECT Id FROM Contact WHERE AccountId = :tmp\n09:41:12.170 (270)|SOQL_EXECUTE_END|[1]|Rows:1\n09:41:12.180 (280)|SOQL_EXECUTE_BEGIN|[1]|SELECT Id FROM Contact WHERE AccountId = :tmp\n09:41:12.210 (310)|SOQL_EXECUTE_END|[1]|Rows:1\n09:41:12.220 (320)|LIMIT_USAGE_FOR_NS|(default)|Number of SOQL queries: 91 out of 100\n09:41:12.230 (330)|USER_DEBUG|[42]|DEBUG|Contact merge candidate evaluated\n09:41:12.250 (350)|FATAL_ERROR|System.LimitException: Too many SOQL queries: 101\n09:41:12.260 (360)|EXECUTION_FINISHED`;
 export function redact(text: string, pii = false) {
-  let out = text.replace(
+  const out = text.replace(
     /(Authorization|session(Id)?|password|client_secret)\s*[:=]\s*[^\s,|]+/gi,
     "$1: [REDACTED]",
   );

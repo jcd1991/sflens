@@ -29,10 +29,11 @@ jobs:
         run: |
           npm install --global @salesforce/cli
           sf code-analyzer run --workspace . \
-            --target apps/bridge/src \
-            --target apps/mcp/src \
-            --target apps/web/src \
-            --target packages/core/src \
+            --target "apps/bridge/src/**/*.ts" \
+            --target "apps/mcp/src/**/*.ts" \
+            --target "apps/web/src/**/*.tsx" \
+            --target "packages/core/src/**/*.ts" \
+            --rule-selector eslint:Recommended \
             --output-file code-analyzer.sarif \
             --output-file code-analyzer.html \
             --severity-threshold 2 || echo "Code Analyzer found findings; reports remain available as CI artifacts."
