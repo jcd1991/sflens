@@ -6,17 +6,15 @@
 
 ### **See the signal. Understand the cause. Share evidence safely.**
 
-<p><strong>A local-first Salesforce debug intelligence workspace for Apex and Flow incidents — with evidence-backed diagnosis instead of blind guessing.</strong></p>
+<p><strong>A local-first Salesforce debugging workspace for Apex and Flow incidents — with evidence-backed findings instead of blind guessing.</strong></p>
 
-[![CI](https://img.shields.io/badge/CI-PASSING-2ea043?style=flat-square&labelColor=4b5563)](https://github.com/jcd1991/sflens/actions/workflows/sflens-ci.yml) [![SALESFORCE](https://img.shields.io/badge/SALESFORCE-APEX%20%2B%20FLOW-1476d4?style=flat-square&labelColor=4b5563)](#feature-tour) [![SECURITY](https://img.shields.io/badge/SECURITY-LOCAL%20%2B%20REDACTED-16b894?style=flat-square&labelColor=4b5563)](#security-posture-and-deliberate-boundaries) [![MCP](https://img.shields.io/badge/MCP-COMPANION%20SERVER-7c3aed?style=flat-square&labelColor=4b5563)](#mcp-companion)
+[![CI](https://img.shields.io/github/actions/workflow/status/jcd1991/sflens/sflens-ci.yml?branch=main&label=CI&style=flat-square&labelColor=4b5563)](https://github.com/jcd1991/sflens/actions/workflows/sflens-ci.yml) [![SALESFORCE](https://img.shields.io/badge/SALESFORCE-APEX%20%2B%20FLOW-1476d4?style=flat-square&labelColor=4b5563)](#feature-tour) [![SECURITY](https://img.shields.io/badge/SECURITY-LOCAL%20%2B%20REDACTED-16b894?style=flat-square&labelColor=4b5563)](#security-posture-and-deliberate-boundaries) [![MCP](https://img.shields.io/badge/MCP-COMPANION%20SERVER-7c3aed?style=flat-square&labelColor=4b5563)](#mcp-companion)
 
-[Live demo](https://jcd1991.github.io/sflens/) · [Quick start](#run-it-locally) · [Authorization flow](#authorization-flow) · [Architecture & security](#architecture-at-a-glance)
+[Live demo](https://jcd1991.github.io/sflens/) · [Quick start](#run-it-locally) · [Authorization flow](#authorization-flow) · [Architecture](#architecture-at-a-glance) · [Security](#security-posture-and-deliberate-boundaries)
 
 </div>
 
-SF Lens parses Apex and Flow logs in the browser, explains governor-limit pressure and failure patterns, connects related transactions using evidence already present in the logs, and packages a redacted diagnosis for a teammate or AI coding assistant.
-
-The public site is a safe Demo/Upload experience. Connected Salesforce access stays local through a loopback bridge and Salesforce CLI.
+SF Lens parses Apex and Flow logs in the browser, explains governor-limit pressure and failure patterns, connects related transactions using evidence already present in the logs, and packages a redacted diagnosis for a teammate or AI coding assistant. The public site supports Demo and Upload modes; connected Salesforce access stays local through the loopback bridge and Salesforce CLI.
 
 ## The 30-second story
 
@@ -36,7 +34,9 @@ findings, Flow path, limits, and related transactions
 copy for AI · export HTML/JSON/SARIF · compare with a baseline
 ```
 
-It is intentionally bounded. SF Lens does not become a hosted log archive, execute Apex, deploy metadata, or invent causality that the logs cannot prove.
+## What SF Lens does not do
+
+SF Lens is intentionally bounded. It is not a hosted log archive and it does not execute Apex, deploy metadata, or invent causality that the logs cannot prove.
 
 ## What you can demo
 
@@ -119,7 +119,7 @@ Connected mode reads existing Salesforce `ApexLog` records through a local bridg
 5. Sign in to the personal or Developer Edition org you want to inspect.
 6. Return to SF Lens. The app discovers the newly authorized local org and loads recent logs.
 
-Keep the bridge terminal running while connected. Salesforce CLI retains its local authorization, so credentials generally do not need to be entered again. The SF Lens browser session is temporary and can be renewed without changing Salesforce data.
+Keep the bridge terminal running while connected. Salesforce CLI retains its authorization locally on that machine, so credentials generally do not need to be entered again. The bridge session is temporary and can be renewed without changing Salesforce data.
 
 ### Generate a useful log
 
@@ -132,7 +132,7 @@ Salesforce creates debug logs only while a trace flag is active:
 5. Select the newest log and inspect Findings, Limits, Compare, or Related.
 6. Click **Disable debug logging** when finished.
 
-The debug control creates a temporary `USER_DEBUG` trace flag for the authenticated user for 15 minutes by default. It does not create records, deploy metadata, run Apex, or modify unrelated trace flags.
+The debug control creates a temporary `USER_DEBUG` trace flag for the authenticated user for 15 minutes by default. It does not create records, deploy metadata, or run Apex. **Disable debug logging removes active trace flags for that user**, so review any manually configured trace flag before using the control.
 
 ### Connected controls
 
