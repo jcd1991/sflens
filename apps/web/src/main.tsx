@@ -258,7 +258,8 @@ export function App() {
         } catch (e) {
           forget("session", "sflens.authSession");
           setMode("Demo");
-          setStatus(bridgeError(e, "Saved Salesforce session could not be resumed. Continuing in Demo mode."));
+          const message = bridgeError(e, "Saved Salesforce session could not be resumed. Continuing in Demo mode.");
+          setStatus(/Local Salesforce bridge unavailable/.test(message) ? "" : message);
           setConnectOpen(true);
         }
       })();

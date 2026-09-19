@@ -7,7 +7,7 @@
   "engines": { "node": ">=24" },
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev": "npm run dev -w @sflens/web",
+    "dev": "node scripts/dev-local.mjs",
     "build": "npm run build -w @sflens/core && npm run build -w @sflens/bridge && npm run build -w @sflens/mcp && npm run build -w @sflens/web",
     "test": "npm run test -w @sflens/core && npm run test -w @sflens/bridge && npm run test -w @sflens/web",
     "typecheck": "npm run typecheck -ws",

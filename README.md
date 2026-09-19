@@ -91,7 +91,7 @@ npm ci
 npm run dev
 ```
 
-Open the Vite URL printed in the terminal.
+This starts both the Vite web app and the local Salesforce bridge. Open the Vite URL printed in the terminal. Keep this process running while using Connected mode.
 
 ### Demo mode
 
@@ -107,10 +107,10 @@ Connected mode reads existing Salesforce `ApexLog` records through a local bridg
 
 ### Authorization flow
 
-1. Start the bridge in a second terminal:
+1. Start SF Lens locally:
 
    ```bash
-   npm run dev -w @sflens/bridge
+   npm run dev
    ```
 
 2. Open SF Lens locally, or open [the hosted site](https://jcd1991.github.io/sflens/) while the bridge is running.
@@ -119,7 +119,9 @@ Connected mode reads existing Salesforce `ApexLog` records through a local bridg
 5. Sign in to the personal or Developer Edition org you want to inspect.
 6. Return to SF Lens. The app discovers the newly authorized local org and loads recent logs.
 
-Keep the bridge terminal running while connected. Salesforce CLI retains its authorization locally on that machine, so credentials generally do not need to be entered again. The bridge session is temporary and can be renewed without changing Salesforce data.
+Keep the local SF Lens process running while connected. Salesforce CLI retains its authorization locally on that machine, so credentials generally do not need to be entered again. The bridge session is temporary and can be renewed without changing Salesforce data.
+
+The hosted GitHub Pages site cannot start a process on your computer. To use Connected mode from the hosted site, start `npm run dev` locally first, then open the hosted page. If the bridge is not running, the hosted page stays in Demo mode until you choose to connect.
 
 ### Generate a useful log
 
