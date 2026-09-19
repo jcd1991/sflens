@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "node scripts/dev-local.mjs",
     "build": "npm run build -w @sflens/core && npm run build -w @sflens/bridge && npm run build -w @sflens/mcp && npm run build -w @sflens/web",
-    "test": "npm run test -w @sflens/core && npm run test -w @sflens/bridge && npm run test -w @sflens/web",
+    "test": "npm run test -w @sflens/core && npm run test -w @sflens/bridge && npm run test -w @sflens/web && npm run test:relay",
+    "test:relay": "node --test workers/sflens-relay/tests/*.test.mjs",
     "typecheck": "npm run typecheck -ws",
     "lint": "npm run lint -ws"
   }

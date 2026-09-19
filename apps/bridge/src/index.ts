@@ -9,18 +9,19 @@ const exec = promisify(execFile),
   port = Number(process.env.SFLENS_BRIDGE_PORT || 8787),
   origin = process.env.SFLENS_WEB_ORIGIN || "http://localhost:5173";
 const allowedOrigins = new Set(
-  (process.env.SFLENS_WEB_ORIGINS || `${origin},https://jcd1991.github.io`)
+  (process.env.SFLENS_WEB_ORIGINS || `${origin},http://127.0.0.1:5173`)
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean),
 );
 const oauthClientId = process.env.SFLENS_SALESFORCE_CLIENT_ID || "";
 const oauthLoginUrl = process.env.SFLENS_SALESFORCE_LOGIN_URL || "https://login.salesforce.com";
-const oauthSessions = new Map<string, { org: any; connection: Connection }>();
+const sessionTtlMs = 60 * 60_000;
+const oauthSessions = new Map<string, { org: any; connection: Connection; expiresAt: number }>();
 const oauthStates = new Map<string, { verifier: string; createdAt: number }>();
 type CliAuthJob = { alias: string; session: string; status: "pending" | "complete" | "error"; error?: string };
 const cliAuthJobs = new Map<string, CliAuthJob>();
-const cliSessions = new Map<string, string>();
+const cliSessions = new Map<string, { alias: string; expiresAt: number }>();
 type BridgeDeps = {
   orgList: typeof orgList;
   connection: typeof connection;
@@ -55,16 +56,22 @@ async function orgList() {
     }));
 }
 async function availableOrgList() {
+  cleanupSessions();
   const cliOrgs = await orgList();
   const oauthOrgs = [...oauthSessions.values()].map((item) => item.org);
   return [...cliOrgs, ...oauthOrgs.filter((oauth) => !cliOrgs.some((cli) => cli.alias === oauth.alias))];
 }
 async function sessionOrgList(req: http.IncomingMessage) {
-  const alias = cliSessions.get(oauthCookie(req) || "");
-  if (!alias) return availableOrgList();
-  return (await orgList()).filter((item: any) => item.alias === alias);
+  cleanupSessions();
+  const session = oauthCookie(req) || "";
+  const cliAlias = cliSessions.get(session)?.alias;
+  if (cliAlias) return (await orgList()).filter((item: any) => item.alias === cliAlias);
+  const oauthOrg = oauthSessions.get(session)?.org;
+  if (oauthOrg) return [oauthOrg];
+  return availableOrgList();
 }
 async function connection(alias: string) {
+  cleanupSessions();
   const oauth = [...oauthSessions.values()].find((item) => item.org.alias === alias);
   if (oauth) return oauth.connection;
   const org = (await orgList()).find((x: any) => x.alias === alias);
@@ -77,8 +84,23 @@ function oauthCookie(req: http.IncomingMessage) {
   return String(req.headers.cookie || "").split(";").map((part) => part.trim()).find((part) => part.startsWith("sflens_session="))?.split("=")[1] || String(req.headers["x-sflens-session"] || "");
 }
 function oauthAuth(req: http.IncomingMessage) {
+  cleanupSessions();
   const session = oauthCookie(req);
   return session && (oauthSessions.has(session) || cliSessions.has(session));
+}
+function canAccessOrg(req: http.IncomingMessage, alias: string) {
+  if (req.headers["x-sflens-token"] === token) return true;
+  const session = oauthCookie(req) || "";
+  return cliSessions.get(session)?.alias === alias || oauthSessions.get(session)?.org.alias === alias;
+}
+function rememberCliSession(session: string, alias: string) {
+  cliSessions.set(session, { alias, expiresAt: Date.now() + sessionTtlMs });
+}
+function cleanupSessions() {
+  const now = Date.now();
+  for (const [key, value] of cliSessions) if (value.expiresAt < now) cliSessions.delete(key);
+  for (const [key, value] of oauthSessions) if (value.expiresAt < now) oauthSessions.delete(key);
+  for (const [key, value] of oauthStates) if (now - value.createdAt > 10 * 60_000) oauthStates.delete(key);
 }
 function startCliAuth() {
   const jobId = randomUUID();
@@ -86,7 +108,7 @@ function startCliAuth() {
   const session = randomUUID();
   const job: CliAuthJob = { alias, session, status: "pending" };
   cliAuthJobs.set(jobId, job);
-  cliSessions.set(session, alias);
+  rememberCliSession(session, alias);
   execFile("sf", ["org", "login", "web", "--alias", alias, "--json"], { maxBuffer: 2_000_000 }, (error) => {
     if (error) {
       job.status = "error";
@@ -101,7 +123,7 @@ async function resumeCliSession(alias: string) {
   const org = (await (testDeps?.orgList || orgList)()).find((item: any) => item.alias === alias);
   if (!org) throw new Error("ORG_NOT_AUTHENTICATED");
   const session = randomUUID();
-  cliSessions.set(session, alias);
+  rememberCliSession(session, alias);
   return { session, org };
 }
 async function oauthStart() {
@@ -124,15 +146,27 @@ async function oauthCallback(url: URL) {
   const response = await fetch(new URL("/services/oauth2/token", oauthLoginUrl), { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", code, client_id: oauthClientId, redirect_uri: `http://127.0.0.1:${port}/oauth/callback`, code_verifier: pending.verifier }) });
   if (!response.ok) throw new Error("OAUTH_TOKEN_EXCHANGE_FAILED");
   const fields: any = await response.json();
-  const identity = await fetch(fields.id, { headers: { authorization: `Bearer ${fields.access_token}` } });
+  const instanceUrl = trustedSalesforceUrl(fields.instance_url);
+  const identityUrl = trustedSalesforceUrl(fields.id, true);
+  if (!fields.access_token || !instanceUrl || !identityUrl) throw new Error("OAUTH_TOKEN_INVALID");
+  const identity = await fetch(identityUrl, { headers: { authorization: `Bearer ${fields.access_token}` } });
   if (!identity.ok) throw new Error("OAUTH_IDENTITY_FAILED");
   const who: any = await identity.json();
   const alias = `oauth-${String(who.organization_id || fields.instance_url).replace(/[^a-zA-Z0-9]/g, "").slice(-12)}`;
-  const authInfo = await AuthInfo.create({ username: who.username, accessTokenOptions: { accessToken: fields.access_token, instanceUrl: fields.instance_url, loginUrl: oauthLoginUrl } });
+  const authInfo = await AuthInfo.create({ username: who.username, accessTokenOptions: { accessToken: fields.access_token, instanceUrl, loginUrl: oauthLoginUrl } });
   const c = await Connection.create({ authInfo });
   const session = randomUUID();
-  oauthSessions.set(session, { org: { alias, username: who.username, instanceUrl: fields.instance_url, orgId: who.organization_id }, connection: c });
+  oauthSessions.set(session, { org: { alias, username: who.username, instanceUrl, orgId: who.organization_id }, connection: c, expiresAt: Date.now() + sessionTtlMs });
   return session;
+}
+function trustedSalesforceUrl(value: unknown, pathRequired = false) {
+  try {
+    const parsed = new URL(String(value));
+    if (parsed.protocol !== "https:" || !/(^|\.)salesforce(?:-setup)?\.com$/i.test(parsed.hostname)) return "";
+    return pathRequired ? parsed.href : parsed.origin;
+  } catch {
+    return "";
+  }
 }
 async function currentUser(alias: string) {
   const org = (await orgList()).find((item: any) => item.alias === alias);
@@ -140,30 +174,35 @@ async function currentUser(alias: string) {
   return { org, connection: await connection(alias) };
 }
 async function body(req: http.IncomingMessage): Promise<any> {
-  return new Promise((resolve, reject) => { let value = ""; req.on("data", (chunk) => value += chunk); req.on("end", () => { try { resolve(value ? JSON.parse(value) : {}); } catch { reject(new Error("INVALID_JSON")); } }); req.on("error", reject); });
+  return new Promise((resolve, reject) => { let value = ""; let size = 0; req.on("data", (chunk) => { size += Buffer.byteLength(chunk); if (size > 16_384) { reject(new Error("REQUEST_TOO_LARGE")); req.destroy(); return; } value += chunk; }); req.on("end", () => { try { resolve(value ? JSON.parse(value) : {}); } catch { reject(new Error("INVALID_JSON")); } }); req.on("error", reject); });
 }
 function send(res: http.ServerResponse, status: number, data: unknown) {
   res.statusCode = status;
   res.setHeader("content-type", "application/json");
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("x-content-type-options", "nosniff");
   res.end(JSON.stringify(data));
 }
+function clientError(error: unknown) {
+  const code = error instanceof Error ? error.message : "";
+  if (code === "SF_CLI_MISSING") return { status: 503, error: code };
+  if (code === "SF_CLI_ERROR") return { status: 502, error: "Salesforce CLI could not complete the request." };
+  if (/^[A-Z][A-Z0-9_]{2,64}$/.test(code)) return { status: 400, error: code };
+  return { status: 400, error: "BRIDGE_REQUEST_FAILED" };
+}
 function logQuery(url: URL) {
-  const limit = Math.min(
-    100,
-    Math.max(1, Number(url.searchParams.get("limit") || 50)),
-  );
+  const rawLimit = Number(url.searchParams.get("limit") || 50);
+  const limit = Number.isFinite(rawLimit) ? Math.min(100, Math.max(1, Math.floor(rawLimit))) : 50;
+  const bounded = (key: string) => { const value = url.searchParams.get(key) || ""; return value.length <= 200 ? value : ""; };
+  const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:?\d{2})?)?$/.test(value);
   const where: string[] = [];
-  const esc = (v: string) => v.replace(/'/g, "\\'");
-  if (url.searchParams.get("user"))
-    where.push(`LogUser.Name LIKE '%${esc(url.searchParams.get("user")!)}%'`);
-  if (url.searchParams.get("operation"))
-    where.push(`Operation LIKE '%${esc(url.searchParams.get("operation")!)}%'`);
-  if (url.searchParams.get("status"))
-    where.push(`Status = '${esc(url.searchParams.get("status")!)}'`);
-  if (url.searchParams.get("from"))
-    where.push(`StartTime >= ${esc(url.searchParams.get("from")!)}`);
-  if (url.searchParams.get("to"))
-    where.push(`StartTime <= ${esc(url.searchParams.get("to")!)}`);
+  const esc = (v: string) => v.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const user = bounded("user"), operation = bounded("operation"), status = bounded("status"), from = bounded("from"), to = bounded("to");
+  if (user) where.push(`LogUser.Name LIKE '%${esc(user)}%'`);
+  if (operation) where.push(`Operation LIKE '%${esc(operation)}%'`);
+  if (status) where.push(`Status = '${esc(status)}'`);
+  if (from && validDate(from)) where.push(`StartTime >= ${from}`);
+  if (to && validDate(to)) where.push(`StartTime <= ${to}`);
   return `SELECT Id,StartTime,LogUser.Name,Operation,Status,LogLength FROM ApexLog${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY StartTime DESC LIMIT ${limit}`;
 }
 async function route(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -177,14 +216,14 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse) {
   res.setHeader("Access-Control-Allow-Private-Network", "true");
   if (req.method === "OPTIONS") return send(res, 204, {});
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
-  if (url.pathname === "/oauth/start") {
+  if (url.pathname === "/oauth/start" && req.method === "GET") {
     try {
       const result: any = await oauthStart();
       if (result.session) res.setHeader("set-cookie", `sflens_session=${result.session}; HttpOnly; SameSite=Lax; Path=/; Max-Age=3600`);
       return send(res, 200, result);
-    } catch (e: any) { return send(res, 503, { error: e.message || "OAUTH_START_FAILED" }); }
+    } catch (e: any) { const result = clientError(e); return send(res, result.status === 400 ? 503 : result.status, { error: result.error }); }
   }
-  const oauthStatus = url.pathname.match(/^\/oauth\/status\/([^/]+)$/);
+  const oauthStatus = req.method === "GET" && url.pathname.match(/^\/oauth\/status\/([^/]+)$/);
   if (oauthStatus) {
     const job = cliAuthJobs.get(decodeURIComponent(oauthStatus[1]));
     if (!job || job.session !== oauthCookie(req)) return send(res, 404, { error: "AUTHORIZATION_NOT_FOUND" });
@@ -194,14 +233,14 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse) {
     }
     return send(res, 200, { status: job.status, ...(job.status === "complete" ? { alias: job.alias } : {}), ...(job.status === "error" ? { error: job.error } : {}) });
   }
-  if (url.pathname === "/oauth/resume") {
+  if (url.pathname === "/oauth/resume" && req.method === "GET") {
     try {
       const resumed: any = await resumeCliSession(url.searchParams.get("alias") || "");
       res.setHeader("set-cookie", `sflens_session=${resumed.session}; HttpOnly; SameSite=Lax; Path=/; Max-Age=3600`);
       return send(res, 200, resumed);
-    } catch (e: any) { return send(res, 401, { error: e.message || "ORG_NOT_AUTHENTICATED" }); }
+    } catch { return send(res, 401, { error: "ORG_NOT_AUTHENTICATED" }); }
   }
-  if (url.pathname === "/oauth/callback") {
+  if (url.pathname === "/oauth/callback" && req.method === "GET") {
     try { const session = await oauthCallback(url); res.setHeader("set-cookie", `sflens_session=${session}; HttpOnly; SameSite=Lax; Path=/; Max-Age=3600`); res.statusCode = 302; res.setHeader("location", `${origin}/sflens/?oauth=success`); return res.end(); } catch { res.statusCode = 302; res.setHeader("location", `${origin}/sflens/?oauth=error`); return res.end(); }
   }
   if (req.headers["x-sflens-token"] !== token && !oauthAuth(req))
@@ -209,11 +248,14 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse) {
   try {
     if (url.pathname === "/health")
       return send(res, 200, { ok: true, version: "0.2.0" });
-    if (url.pathname === "/orgs")
+    if (url.pathname === "/orgs" && req.method === "GET")
       return send(res, 200, { orgs: await (testDeps?.orgList || sessionOrgList)(req) });
     const debugMatch = url.pathname.match(/^\/orgs\/([^/]+)\/debug-logging$/);
     if (debugMatch) {
-      const alias = decodeURIComponent(debugMatch[1]);
+      if (!["GET", "POST", "DELETE"].includes(req.method || "")) return send(res, 405, { error: "METHOD_NOT_ALLOWED" });
+      let alias = "";
+      try { alias = decodeURIComponent(debugMatch[1]); } catch { return send(res, 400, { error: "INVALID_ORG_ALIAS" }); }
+      if (!canAccessOrg(req, alias)) return send(res, 404, { error: "ORG_NOT_AUTHENTICATED" });
       const { org, connection: c } = await (testDeps?.currentUser || currentUser)(alias);
       const user = (await c.tooling.query(`SELECT Id FROM User WHERE Username = '${org.username.replace(/'/g, "\\'")}' LIMIT 1`)).records?.[0];
       if (!user) throw new Error("CURRENT_USER_NOT_FOUND");
@@ -222,7 +264,7 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse) {
         return send(res, 200, { enabled: Boolean(active.records?.length), flags: active.records || [] });
       }
       if (req.method === "POST") {
-        const input = await body(req); const minutes = Math.min(60, Math.max(1, Number(input.minutes || 15)));
+        const input = await body(req); const rawMinutes = Number(input.minutes || 15); const minutes = Number.isFinite(rawMinutes) ? Math.min(60, Math.max(1, rawMinutes)) : 15;
         const levels = await c.tooling.query("SELECT Id FROM DebugLevel ORDER BY DeveloperName LIMIT 1");
         const level = levels.records?.[0]; if (!level) throw new Error("DEBUG_LEVEL_NOT_FOUND");
         const start = new Date(), expiration = new Date(start.getTime() + minutes * 60_000);
@@ -237,13 +279,18 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse) {
     }
     const asyncMatch = url.pathname.match(/^\/orgs\/([^/]+)\/async-jobs$/);
     if (asyncMatch) {
+      if (req.method !== "GET") return send(res, 405, { error: "METHOD_NOT_ALLOWED" });
       const ids = (url.searchParams.get("ids") || "")
         .split(",")
         .filter(Boolean)
         .slice(0, 20);
       if (!ids.length) return send(res, 200, { records: [] });
-      const c = await (testDeps?.connection || connection)(decodeURIComponent(asyncMatch[1]));
-      const safe = ids.map((id) => id.replace(/[^a-zA-Z0-9]/g, ""));
+      let alias = "";
+      try { alias = decodeURIComponent(asyncMatch[1]); } catch { return send(res, 400, { error: "INVALID_ORG_ALIAS" }); }
+      if (!canAccessOrg(req, alias)) return send(res, 404, { error: "ORG_NOT_AUTHENTICATED" });
+      const c = await (testDeps?.connection || connection)(alias);
+      const safe = ids.filter((id) => /^[a-zA-Z0-9]{15,18}$/.test(id));
+      if (!safe.length) return send(res, 200, { records: [] });
       return send(
         res,
         200,
@@ -256,7 +303,11 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse) {
       /^\/orgs\/([^/]+)\/logs(?:\/([^/]+)(?:\/body)?)?$/,
     );
     if (!m) return send(res, 404, { error: "NOT_FOUND" });
-    const c = await (testDeps?.connection || connection)(decodeURIComponent(m[1]));
+    if (req.method !== "GET") return send(res, 405, { error: "METHOD_NOT_ALLOWED" });
+    let alias = "";
+    try { alias = decodeURIComponent(m[1]); } catch { return send(res, 400, { error: "INVALID_ORG_ALIAS" }); }
+    if (!canAccessOrg(req, alias)) return send(res, 404, { error: "ORG_NOT_AUTHENTICATED" });
+    const c = await (testDeps?.connection || connection)(alias);
     if (!m[2]) {
       const result: any = await c.tooling.query(logQuery(url));
       return send(res, 200, {
@@ -268,27 +319,27 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse) {
           operation: x.Operation,
           status: x.Status,
           size: x.LogLength,
-          orgAlias: decodeURIComponent(m[1]),
+          orgAlias: alias,
         })),
       });
     }
-    if (url.pathname.endsWith("/body"))
+    if (url.pathname.endsWith("/body")) {
+      if (!/^[a-zA-Z0-9]{15,18}$/.test(m[2])) return send(res, 400, { error: "INVALID_LOG_ID" });
+      const rawBody = await c.request(
+        `/services/data/v${c.getApiVersion()}/tooling/sobjects/ApexLog/${m[2]}/Body`,
+      );
+      if (Buffer.byteLength(String(rawBody), "utf8") > 25 * 1024 * 1024) throw new Error("SALESFORCE_RESPONSE_TOO_LARGE");
       return send(
         res,
         200,
-        await c.request(
-          `/services/data/v${c.getApiVersion()}/tooling/sobjects/ApexLog/${m[2]}/Body`,
-        ),
+        rawBody,
       );
+    }
+    if (!/^[a-zA-Z0-9]{15,18}$/.test(m[2])) return send(res, 400, { error: "INVALID_LOG_ID" });
     return send(res, 200, await c.tooling.retrieve("ApexLog", m[2]));
   } catch (e: any) {
-    const code = e.message || "BRIDGE_ERROR";
-    return send(res, code === "SF_CLI_MISSING" ? 503 : 400, {
-      error:
-        code === "SF_CLI_ERROR"
-          ? "Salesforce CLI could not complete the request."
-          : code,
-    });
+    const result = clientError(e);
+    return send(res, result.status, { error: result.error });
   }
 }
 if (process.env.NODE_ENV !== "test") {

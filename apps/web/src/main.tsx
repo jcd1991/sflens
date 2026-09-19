@@ -14,8 +14,27 @@ import {
   type OrgSummary,
   type PerformanceComparison,
 } from "@sflens/core";
+import {
+  createSalesforceOAuthStart,
+  salesforceOAuthError,
+  salesforceOrgAlias,
+  salesforceRedirectUri,
+  type SalesforceOAuthConfig,
+} from "./salesforce-oauth";
 import "./style.css";
 const bridgeDefault = "http://127.0.0.1:8787";
+const browserClientId = import.meta.env.VITE_SALESFORCE_CLIENT_ID || "";
+const browserLoginUrl = import.meta.env.VITE_SALESFORCE_LOGIN_URL || "https://login.salesforce.com";
+const browserApiVersion = import.meta.env.VITE_SALESFORCE_API_VERSION || "62.0";
+const hostedRelayUrl = (import.meta.env.VITE_SFLENS_RELAY_URL || "").replace(/\/$/, "");
+const browserOAuthConfig: SalesforceOAuthConfig = {
+  clientId: browserClientId,
+  loginUrl: browserLoginUrl,
+  redirectUri: typeof window === "undefined" ? "" : salesforceRedirectUri(),
+};
+function isHostedPage() {
+  return typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname);
+}
 function browserStorage(kind: "session" | "local") {
   try { return kind === "local" ? window.localStorage : window.sessionStorage; } catch { return undefined; }
 }
@@ -25,6 +44,13 @@ function forget(kind: "session" | "local", key: string) { try { browserStorage(k
 type Mode = "Demo" | "Upload" | "Connected";
 type LogKind = "Apex" | "Flow" | "Aura" | "API" | "Visualforce" | "Other";
 type GlobalMatch = { summary: RemoteLogSummary; lines: number[] };
+type BrowserConnection = {
+  accessToken: string;
+  instanceUrl: string;
+  alias: string;
+  username: string;
+  orgId: string;
+};
 function logKind(operation = "", name = ""): LogKind {
   const value = `${operation} ${name}`.toLowerCase();
   if (/flow|interview/.test(value)) return "Flow";
@@ -58,6 +84,8 @@ export function App() {
     [org, setOrg] = useState(""),
     [bridge] = useState(bridgeDefault),
     authSession = useRef(""),
+    relaySession = useRef(""),
+    browserConnection = useRef<BrowserConnection | null>(null),
     autoSelected = useRef(false),
     [connectOpen, setConnectOpen] = useState(false),
     [status, setStatus] = useState(""),
@@ -74,7 +102,8 @@ export function App() {
     [debugExpires, setDebugExpires] = useState<string | undefined>(),
     [ciOpen, setCiOpen] = useState(false),
     [moreOpen, setMoreOpen] = useState(false),
-    [copied, setCopied] = useState("");
+    [copied, setCopied] = useState(""),
+    [hostedReadOnly, setHostedReadOnly] = useState(false);
   const parsed = useMemo(
     () =>
       parseLog(raw, {
@@ -100,6 +129,53 @@ export function App() {
       (x) => !query || x.line.toLowerCase().includes(query.toLowerCase()),
     );
   const api = async (path: string, init: RequestInit = {}) => {
+    if (relaySession.current && hostedRelayUrl) {
+      const response = await fetch(`${hostedRelayUrl}${path}`, {
+        ...init,
+        credentials: "omit",
+        headers: { "x-sflens-session": relaySession.current, ...(init.headers || {}) },
+      });
+      if (!response.ok) {
+        if (response.status === 401) relaySession.current = "";
+        const error = await response.json().catch(() => ({}));
+        throw Error(error.error || `SF Lens relay request failed (${response.status})`);
+      }
+      if (path.endsWith("/body")) return response.text();
+      return response.json();
+    }
+    const browser = browserConnection.current;
+    if (browser) {
+      const logMatch = path.match(/^\/orgs\/([^/]+)\/logs(?:\/([^/]+)(?:\/body)?)?\??(.*)$/);
+      const orgAlias = logMatch?.[1] ? decodeURIComponent(logMatch[1]) : "";
+      const bodyId = logMatch?.[2] ? decodeURIComponent(logMatch[2]) : "";
+      const query = logMatch?.[3] || "";
+      if (path === "/orgs") return { orgs: [{ alias: browser.alias, username: browser.username, instanceUrl: browser.instanceUrl, orgId: browser.orgId }] };
+      if (orgAlias && orgAlias !== browser.alias) throw Error("ORG_NOT_AUTHENTICATED");
+      if (path.startsWith(`/orgs/${encodeURIComponent(browser.alias)}/debug-logging`)) throw Error("Hosted Salesforce connections are read-only. Use local mode to manage trace flags.");
+      const endpoint = bodyId
+        ? `/services/data/v${browserApiVersion}/tooling/sobjects/ApexLog/${encodeURIComponent(bodyId)}/Body`
+        : `/services/data/v${browserApiVersion}/tooling/query?q=${encodeURIComponent(buildBrowserLogQuery(new URLSearchParams(query)))}`;
+      const response = await fetch(`${browser.instanceUrl}${endpoint}`, {
+        ...init,
+        headers: { authorization: `Bearer ${browser.accessToken}`, ...(init.headers || {}) },
+      });
+      if (!response.ok) {
+        if (response.status === 401) browserConnection.current = null;
+        throw Error(`Salesforce request failed (${response.status})`);
+      }
+      if (bodyId) return response.text();
+      const result = await response.json();
+      return { records: (result.records || []).map((item: any) => ({
+        id: item.Id,
+        name: `${item.Operation || "Apex"} · ${item.StartTime || item.Id}`,
+        startTime: item.StartTime,
+        user: item.LogUser?.Name,
+        operation: item.Operation,
+        status: item.Status,
+        size: item.LogLength,
+        orgAlias: browser.alias,
+      })) };
+    }
     const r = await fetch(`${bridge}${path}`, {
       ...init,
       credentials: "include",
@@ -111,8 +187,24 @@ export function App() {
     }
     return r.json();
   };
+  const buildBrowserLogQuery = (params: URLSearchParams) => {
+    const limit = Math.min(100, Math.max(1, Number(params.get("limit") || 50)));
+    const escapeSoql = (value: string) => value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+    const where: string[] = [];
+    if (params.get("user")) where.push(`LogUser.Name LIKE '%${escapeSoql(params.get("user")!)}%'`);
+    if (params.get("operation")) where.push(`Operation LIKE '%${escapeSoql(params.get("operation")!)}%'`);
+    if (params.get("status")) where.push(`Status = '${escapeSoql(params.get("status")!)}'`);
+    if (params.get("from")) where.push(`StartTime >= ${escapeSoql(params.get("from")!)}`);
+    if (params.get("to")) where.push(`StartTime <= ${escapeSoql(params.get("to")!)}`);
+    return `SELECT Id,StartTime,LogUser.Name,Operation,Status,LogLength FROM ApexLog${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY StartTime DESC LIMIT ${limit}`;
+  };
   const loadDebugStatus = async (alias = org) => {
     if (!alias) return;
+    if (browserConnection.current) {
+      setDebugEnabled(false);
+      setDebugExpires(undefined);
+      return;
+    }
     try { const d = await api(`/orgs/${encodeURIComponent(alias)}/debug-logging`); setDebugEnabled(Boolean(d.enabled)); setDebugExpires(d.flags?.[0]?.ExpirationDate); } catch { setDebugEnabled(false); }
   };
   const ensureDebugLogging = async (alias: string) => {
@@ -132,6 +224,10 @@ export function App() {
     return true;
   };
   const toggleDebug = async () => {
+    if (browserConnection.current) {
+      setStatus("Hosted Salesforce access is read-only · use local mode to manage debug logging");
+      return;
+    }
     setLoading(true);
     try { const d = await api(`/orgs/${encodeURIComponent(org)}/debug-logging`, debugEnabled ? { method: "DELETE" } : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ minutes: 15 }) }); setDebugEnabled(Boolean(d.enabled)); setDebugExpires(d.expiresAt); setStatus(d.enabled ? "Debug logging enabled for 15 minutes" : "Debug logging disabled"); }
     catch (e) { setStatus(bridgeError(e, "Could not change debug logging.")); } finally { setLoading(false); }
@@ -191,9 +287,85 @@ export function App() {
       setStatus(`${matches.length} matching log${matches.length === 1 ? "" : "s"} · searched ${queue.length}`);
     } finally { setGlobalSearching(false); }
   };
+  const startBrowserOAuth = async () => {
+    if (!browserClientId) throw Error("Hosted Salesforce authorization is not configured yet. Continue in Demo mode or run SF Lens locally.");
+    const start = await createSalesforceOAuthStart(browserOAuthConfig);
+    remember("session", "sflens.oauth.state", start.state);
+    remember("session", "sflens.oauth.verifier", start.verifier);
+    window.location.assign(start.authorizationUrl);
+  };
+  const finishRelayConnection = async (session: string) => {
+    if (!hostedRelayUrl || !session) throw Error("The hosted Salesforce session was missing.");
+    relaySession.current = session;
+    remember("session", "sflens.relay.session", session);
+    window.history.replaceState({}, "", window.location.pathname);
+    const d = await api("/orgs");
+    if (!d.orgs?.length) throw Error("No Salesforce org was authorized.");
+    setOrgs(d.orgs);
+    setOrg(d.orgs[0].alias);
+    setHostedReadOnly(true);
+    setMode("Connected");
+    setConnectOpen(false);
+    autoSelected.current = false;
+    setStatus("Connected · hosted read-only session");
+    await refresh(d.orgs[0].alias);
+    setStatus("Connected · hosted read-only session");
+  };
+  const finishBrowserConnection = async (code: string, state: string) => {
+    const expectedState = stored("session", "sflens.oauth.state");
+    const verifier = stored("session", "sflens.oauth.verifier");
+    forget("session", "sflens.oauth.state");
+    forget("session", "sflens.oauth.verifier");
+    window.history.replaceState({}, "", window.location.pathname);
+    if (!expectedState || !verifier || !state || state !== expectedState) throw Error("Salesforce authorization state was invalid. Start again.");
+    if (!browserClientId) throw Error("Hosted Salesforce authorization is not configured yet.");
+    const response = await fetch(new URL("/services/oauth2/token", browserLoginUrl), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        client_id: browserClientId,
+        redirect_uri: browserOAuthConfig.redirectUri,
+        code_verifier: verifier,
+      }),
+    });
+    if (!response.ok) throw Error("Salesforce token exchange failed.");
+    const fields: any = await response.json();
+    if (!fields.access_token || !fields.instance_url || !fields.id) throw Error("Salesforce did not return a usable authorization.");
+    const identity = await fetch(fields.id, { headers: { authorization: `Bearer ${fields.access_token}` } });
+    if (!identity.ok) throw Error("Salesforce identity lookup failed.");
+    const who: any = await identity.json();
+    const connection: BrowserConnection = {
+      accessToken: fields.access_token,
+      instanceUrl: String(fields.instance_url).replace(/\/$/, ""),
+      alias: salesforceOrgAlias(String(who.organization_id || ""), String(fields.instance_url)),
+      username: who.username || "Salesforce user",
+      orgId: who.organization_id || "",
+    };
+    browserConnection.current = connection;
+    setHostedReadOnly(true);
+    setOrgs([{ alias: connection.alias, username: connection.username, instanceUrl: connection.instanceUrl, orgId: connection.orgId }]);
+    setOrg(connection.alias);
+    autoSelected.current = false;
+    setMode("Connected");
+    setConnectOpen(false);
+    setStatus("Connected · hosted read-only session");
+    await refresh(connection.alias);
+    setStatus("Connected · hosted read-only session");
+  };
   const connect = async () => {
     setStatus("Opening Salesforce authorization…");
     try {
+      if (isHostedPage()) {
+        setConnectOpen(false);
+        if (hostedRelayUrl) {
+          window.location.assign(`${hostedRelayUrl}/oauth/start`);
+          return;
+        }
+        await startBrowserOAuth();
+        return;
+      }
       const response = await fetch(`${bridge}/oauth/start`, { credentials: "include" });
       const data = await response.json();
       if (!response.ok) throw Error(data.error || "Salesforce authorization is not configured.");
@@ -224,6 +396,7 @@ export function App() {
       if (!d.orgs?.length) throw Error("No Salesforce org was authorized.");
       setOrgs(d.orgs);
       setOrg(d.orgs[0].alias);
+      setHostedReadOnly(false);
       autoSelected.current = false;
       remember("session", "sflens.orgAlias", d.orgs[0].alias);
       remember("local", "sflens.orgAlias", d.orgs[0].alias);
@@ -237,9 +410,49 @@ export function App() {
     } catch (e) { setStatus(bridgeError(e, "Could not finish Salesforce authorization.")); setMode("Demo"); setConnectOpen(true); }
   };
   useEffect(() => {
-    const oauthResult = new URLSearchParams(window.location.search).get("oauth");
+    const params = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const oauthResult = params.get("oauth");
+    const code = params.get("code");
+    const state = params.get("state") || "";
+    const relayHashSession = hashParams.get("sflens_session");
+    if (isHostedPage() && hostedRelayUrl && relayHashSession) {
+      void finishRelayConnection(relayHashSession).catch((error) => {
+        forget("session", "sflens.relay.session");
+        relaySession.current = "";
+        setMode("Demo");
+        setStatus(salesforceOAuthError(error));
+        setConnectOpen(true);
+      });
+      return;
+    }
+    if (code && isHostedPage() && !hostedRelayUrl) {
+      void finishBrowserConnection(code, state).catch((error) => {
+        setMode("Demo");
+        setStatus(salesforceOAuthError(error));
+        setConnectOpen(true);
+      });
+      return;
+    }
     if (oauthResult === "success") void finishConnection();
-    else if (!oauthResult) {
+    else if (!oauthResult && !code) {
+      if (isHostedPage()) {
+        if (hostedRelayUrl) {
+          const savedSession = stored("session", "sflens.relay.session");
+          if (savedSession) {
+            void finishRelayConnection(savedSession).catch(() => {
+              forget("session", "sflens.relay.session");
+              relaySession.current = "";
+              setConnectOpen(true);
+            });
+          } else {
+            setConnectOpen(true);
+          }
+          return;
+        }
+        setConnectOpen(true);
+        return;
+      }
       const savedAlias = stored("session", "sflens.orgAlias") || stored("local", "sflens.orgAlias");
       if (!savedAlias) { setConnectOpen(true); return; }
       void (async () => {
@@ -355,17 +568,27 @@ export function App() {
   const exportIncident = (format: "json" | "html" | "sarif") => { const bundle = incidentBundle(parsed, format, comparison || undefined); const url = URL.createObjectURL(new Blob([bundle.content], { type: format === "html" ? "text/html" : "application/json" })); const a = document.createElement("a"); a.href = url; a.download = bundle.filename; a.click(); URL.revokeObjectURL(url); setStatus(`Downloaded redacted ${format.toUpperCase()} bundle`); };
   const disconnect = () => {
     authSession.current = "";
+    relaySession.current = "";
+    browserConnection.current = null;
     autoSelected.current = false;
     forget("session", "sflens.orgAlias");
     forget("session", "sflens.authSession");
+    forget("session", "sflens.relay.session");
     forget("local", "sflens.orgAlias");
     setRemote([]);
+    setOrgs([]);
+    setOrg("");
+    setHostedReadOnly(false);
     setMode("Demo");
     setRaw(demoLog);
     setStatus("Disconnected");
   };
   const showDemo = () => {
     autoSelected.current = false;
+    relaySession.current = "";
+    browserConnection.current = null;
+    forget("session", "sflens.relay.session");
+    setHostedReadOnly(false);
     setConnectOpen(false);
     setMode("Demo");
     setRaw(demoLog);
@@ -459,10 +682,16 @@ export function App() {
           <button onClick={() => refresh()} disabled={loading}>
             {loading ? "Loading…" : "Refresh logs"}
           </button>
-          <button className={debugEnabled ? "debug-on" : ""} onClick={toggleDebug} disabled={loading}>
-            {debugEnabled ? "Disable debug logging" : "Enable debug logging"}
-          </button>
-          <span className="debug-help">{debugEnabled ? `Capturing for 15 minutes${debugExpires ? ` · until ${new Date(debugExpires).toLocaleTimeString()}` : ""}` : "Creates a temporary user trace flag"}</span>
+          {hostedReadOnly ? (
+            <span className="debug-help hosted-readonly">Hosted read-only · trace flags require local mode</span>
+          ) : (
+            <>
+              <button className={debugEnabled ? "debug-on" : ""} onClick={toggleDebug} disabled={loading}>
+                {debugEnabled ? "Disable debug logging" : "Enable debug logging"}
+              </button>
+              <span className="debug-help">{debugEnabled ? `Capturing for 15 minutes${debugExpires ? ` · until ${new Date(debugExpires).toLocaleTimeString()}` : ""}` : "Creates a temporary user trace flag"}</span>
+            </>
+          )}
           <span className="muted">{status}</span>
         </section>
       )}
@@ -714,15 +943,17 @@ export function App() {
         <div className="modal-backdrop">
           <div className="modal">
             <h3>Connect Salesforce</h3>
-            <p>Authorize SF Lens to read existing ApexLogs from your Salesforce org. Salesforce will show its normal login and consent screen, then return you here.</p>
-            <div className="ci-status"><b>Secure · local-only · read-only</b><span>Your credentials stay with Salesforce and the local bridge. Logs are processed in this browser session and never sent to a hosted service.</span></div>
+            <p>{isHostedPage() ? "Authorize SF Lens through Salesforce. No local install or bridge is required for the hosted read-only connection." : "Authorize SF Lens to read existing ApexLogs from your Salesforce org. Salesforce will show its normal login and consent screen, then return you here."}</p>
+            <div className="ci-status"><b>Secure · read-only · no hosted log archive</b><span>{hostedRelayUrl ? "Salesforce handles your sign-in. The relay keeps only a short-lived access token in volatile memory, never stores logs, and sends bounded log data to this browser for local redaction before display or export." : isHostedPage() ? "Salesforce handles your sign-in. SF Lens requests API access, keeps the access token only in this tab’s memory, and redacts logs before display or export." : "Your credentials stay with Salesforce and the local bridge. Logs are processed in this browser session and never sent to a hosted service."}</span></div>
+            {isHostedPage() && !hostedRelayUrl && !browserClientId && <small className="error">Hosted authorization is not configured on this deployment yet. Continue in Demo mode or run SF Lens locally.</small>}
             <div className="modal-actions">
               <button onClick={showDemo}>Continue in Demo</button>
               <button
                 className="active"
                 onClick={connect}
+                disabled={isHostedPage() && !hostedRelayUrl && !browserClientId}
               >
-                Authorize Salesforce
+                {isHostedPage() ? "Authorize in Salesforce" : "Authorize Salesforce"}
               </button>
             </div>
             {status && <small className="error">{status}</small>}

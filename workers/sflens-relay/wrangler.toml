@@ -1,0 +1,10 @@
+name = "sflens-relay"
+main = "src/index.js"
+compatibility_date = "2026-09-19"
+
+[vars]
+SFLENS_WEB_ORIGIN = "https://jcd1991.github.io"
+SFLENS_REDIRECT_URI = "https://jcd1991.github.io/sflens/"
+SFLENS_CALLBACK_URI = "https://sflens-relay.carito5290.workers.dev/oauth/callback"
+SFLENS_SALESFORCE_LOGIN_URL = "https://login.salesforce.com"
+SFLENS_SALESFORCE_API_VERSION = "62.0"

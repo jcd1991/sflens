@@ -10,11 +10,11 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/jcd1991/sflens/sflens-ci.yml?branch=main&label=CI&style=flat-square&labelColor=4b5563)](https://github.com/jcd1991/sflens/actions/workflows/sflens-ci.yml) [![SALESFORCE](https://img.shields.io/badge/SALESFORCE-APEX%20%2B%20FLOW-1476d4?style=flat-square&labelColor=4b5563)](#feature-tour) [![SECURITY](https://img.shields.io/badge/SECURITY-LOCAL%20%2B%20REDACTED-16b894?style=flat-square&labelColor=4b5563)](#security-posture-and-deliberate-boundaries) [![MCP](https://img.shields.io/badge/MCP-COMPANION%20SERVER-7c3aed?style=flat-square&labelColor=4b5563)](#mcp-companion)
 
-[Live demo](https://jcd1991.github.io/sflens/) · [Quick start](#run-it-locally) · [Authorization flow](#authorization-flow) · [Architecture](#architecture-at-a-glance) · [Security](#security-posture-and-deliberate-boundaries)
+[Live demo](https://jcd1991.github.io/sflens/) · [Quick start](#run-it-locally) · [Authorization flow](#hosted-authorization) · [Architecture](#architecture-at-a-glance) · [Security](#security-posture-and-deliberate-boundaries)
 
 </div>
 
-SF Lens parses Apex and Flow logs in the browser, explains governor-limit pressure and failure patterns, connects related transactions using evidence already present in the logs, and packages a redacted diagnosis for a teammate or AI coding assistant. The public site supports Demo and Upload modes; connected Salesforce access stays local through the loopback bridge and Salesforce CLI.
+SF Lens parses Apex and Flow logs in the browser, explains governor-limit pressure and failure patterns, connects related transactions using evidence already present in the logs, and packages a redacted diagnosis for a teammate or AI coding assistant. The public site supports Demo, Upload, and hosted read-only Salesforce authorization through the SF Lens relay. Local mode adds the loopback bridge and trace-flag controls.
 
 ## The 30-second story
 
@@ -103,9 +103,29 @@ Click **Upload log** and select a `.log` or `.txt` file up to 25 MB. The file is
 
 ## Connect a Salesforce org
 
-Connected mode reads existing Salesforce `ApexLog` records through a local bridge. The normal path uses Salesforce CLI’s browser authorization; no Connected App, client ID, password, bridge URL, or startup token needs to be entered into the web UI.
+SF Lens has two connection paths:
 
-### Authorization flow
+- **Hosted Connect** uses Salesforce OAuth authorization-code + PKCE through the small Cloudflare Worker relay configured for the public demo. It needs no install, terminal, or per-org CORS setup, is read-only, and keeps only a short-lived access token in relay memory. Log bodies are bounded in the relay, then redacted in the browser before display, copy, or export.
+- **Local Connect** uses Salesforce CLI through the loopback bridge. It is the advanced path and is required for the optional **Enable debug logging** / **Disable debug logging** controls.
+
+The hosted path uses one Salesforce OAuth app configured by the SF Lens maintainer—not a new app in every customer org. The relay callback is configured on that app; users only complete Salesforce’s normal authorization screen. The Salesforce OAuth app must use PKCE and allow the relay callback URL.
+
+```text
+https://sflens-relay.carito5290.workers.dev/oauth/callback
+```
+
+Use a public-client Salesforce External Client App or Connected App with PKCE enabled and the `api` scope. The relay calls Salesforce server-to-server, so target orgs do not need to add the GitHub Pages origin to their CORS allowlist. Do not add a client secret to this repository or to Vite build output; the flow is intentionally a public client.
+
+### Hosted authorization
+
+1. Open [the hosted site](https://jcd1991.github.io/sflens/).
+2. Click **Authorize in Salesforce**.
+3. Complete Salesforce’s normal sign-in and consent screen.
+4. SF Lens loads recent `ApexLog` summaries and automatically opens the most recent available log.
+
+The hosted connection reads `ApexLog` summaries and bodies through the relay. It does not enable trace flags, modify records, deploy metadata, execute Apex, or store logs. The relay session is short-lived and held in volatile Worker memory; users may need to authorize again after a session expires or the Worker is recycled.
+
+### Local authorization
 
 1. Start SF Lens locally:
 
@@ -113,15 +133,13 @@ Connected mode reads existing Salesforce `ApexLog` records through a local bridg
    npm run dev
    ```
 
-2. Open SF Lens locally, or open [the hosted site](https://jcd1991.github.io/sflens/) while the bridge is running.
+2. Open SF Lens locally.
 3. Click **Connected**, then **Authorize Salesforce**.
 4. Salesforce CLI opens Salesforce’s normal login and authorization screen.
 5. Sign in to the personal or Developer Edition org you want to inspect.
 6. Return to SF Lens. The app discovers the newly authorized local org and loads recent logs.
 
 Keep the local SF Lens process running while connected. Salesforce CLI retains its authorization locally on that machine, so credentials generally do not need to be entered again. The bridge session is temporary and can be renewed without changing Salesforce data.
-
-The hosted GitHub Pages site cannot start a process on your computer. To use Connected mode from the hosted site, start `npm run dev` locally first, then open the hosted page. If the bridge is not running, the hosted page stays in Demo mode until you choose to connect.
 
 ### Generate a useful log
 
@@ -138,7 +156,7 @@ The debug control creates a temporary `USER_DEBUG` trace flag for the authentica
 
 ### Connected controls
 
-- **Org selector** — choose the authorized local org.
+- **Org selector** — choose the authorized org.
 - **Refresh logs** — retrieve the latest summaries immediately.
 - **Filters** — narrow by user, operation, status, or time window.
 - **Search all logs** — search up to 100 recent log bodies, fetched only for the current search.
@@ -148,20 +166,26 @@ The debug control creates a temporary `USER_DEBUG` trace flag for the authentica
 ## Architecture at a glance
 
 ```text
-┌──────────────────────────────┐
-│ React/Vite web app            │
-│ Demo · Upload · Connected UI  │
-└──────────────┬───────────────┘
-               │ localhost / approved Pages origin
-┌──────────────▼───────────────┐
-│ Local loopback bridge         │
-│ Salesforce CLI + Tooling API │
-│ bounded read-only routes     │
-└──────────────┬───────────────┘
-               │ existing ApexLog records only
-        ┌──────▼──────┐
-        │ Salesforce  │
-        └─────────────┘
+                         ┌──────────────────────────────┐
+                         │ React/Vite web app            │
+                         │ Demo · Upload · Connected UI  │
+                         └──────────────┬───────────────┘
+                                        │
+                         ┌──────────────▼───────────────┐
+                         │ Browser parser + redaction    │
+                         └──────────────┬───────────────┘
+                           hosted        │ local
+                  ┌────────▼────────┐    ┌▼────────────────────┐
+                  │ Cloudflare      │    │ Loopback bridge     │
+                  │ Worker relay    │    │ Salesforce CLI/API │
+                  │ OAuth + reads   │    │ trace flags local  │
+                  └────────┬────────┘    └──────────┬─────────┘
+                           └──────────────┬──────────┘
+                                          ▼
+                                   ┌─────────────┐
+                                   │ Salesforce  │
+                                   │ ApexLog     │
+                                   └─────────────┘
 
 packages/core → parser, contracts, findings, redaction, comparison, fixtures
 apps/mcp      → local stdio MCP adapter over the same bounded interfaces
@@ -173,6 +197,7 @@ apps/mcp      → local stdio MCP adapter over the same bounded interfaces
 - `apps/web` — React/Vite explorer, Demo/Upload/Connected UI, exports, and AI copy actions.
 - `apps/bridge` — local Salesforce CLI and Tooling API reader. It does not persist logs or records.
 - `apps/mcp` — local stdio MCP server using the fixture by default or connected bridge data when configured.
+- `workers/sflens-relay` — optional Cloudflare Worker for hosted OAuth + bounded read-only `ApexLog` reads. See [`docs/security-and-hosted-auth.md`](docs/security-and-hosted-auth.md) before deploying it.
 
 ## MCP companion
 
@@ -204,12 +229,14 @@ All tools are bounded, redaction-aware, and read-only with respect to Salesforce
 
 ## Security posture and deliberate boundaries
 
-- Salesforce credentials are handled by Salesforce CLI’s local authorization flow.
-- OAuth access tokens remain in local bridge memory or Salesforce CLI’s local store.
-- Connected sessions use a local HttpOnly cookie; tokens are not put in URLs, `localStorage`, rendered errors, or build output.
-- Raw log bodies remain in browser memory and are redacted before display, copy, or export.
-- The bridge binds to `127.0.0.1` and allows localhost plus the published GitHub Pages origin by default. Set `SFLENS_WEB_ORIGINS` for a fork or custom domain.
-- GitHub Pages is static and supports Demo/Upload only; Connected mode requires the local bridge.
+The hosted authorization threat model, deployment procedure, incident response, and security review checklist live in [`docs/security-and-hosted-auth.md`](docs/security-and-hosted-auth.md). The short version:
+
+- Salesforce credentials are handled by Salesforce’s own authorization screen or Salesforce CLI’s local authorization flow.
+- Hosted OAuth access tokens remain in short-lived Worker memory only. The browser receives an opaque session ID in a fragment, removes it from the address bar, and keeps it only in `sessionStorage`.
+- The public GitHub Pages build does not receive a Salesforce client secret or hosted access token. The Worker secret is configured with Wrangler, outside Git and Pages artifacts. The relay returns bounded log data; redaction happens in the browser before display, copy, or export.
+- Raw log bodies remain in browser memory. Review every export before sharing.
+- The hosted relay exposes only bounded, read-only `ApexLog` routes. It cannot enable logging, execute Apex, deploy metadata, run arbitrary SOQL, or write Salesforce data.
+- The local bridge binds to `127.0.0.1`, checks its origin allowlist, binds cookie sessions to one authorized org, and uses a short-lived session cookie/startup token. By default it allows only the local Vite origins; adding a public origin requires an explicit `SFLENS_WEB_ORIGINS` override. Debug-flag controls remain local-only.
 - The ignored `.sflens-test-org.json` file is local test configuration and must never be committed.
 - EventLogFile observability is intentionally not included in this release; retention and availability depend on org type and Event Monitoring entitlement.
 
@@ -219,11 +246,15 @@ SF Lens does not provide a hosted log archive, shared backend, automatic replay,
 
 ### “Failed to fetch”
 
-Confirm that the local bridge is still running. When using the hosted site, confirm that `https://jcd1991.github.io` is in the bridge’s allowed origins, then reload and reconnect.
+For Hosted Connect, confirm the relay is deployed, its Salesforce client ID secret is set, and the Salesforce app callback matches the relay callback URL. For Local Connect, confirm that the local bridge is still running and that its allowed origins include the page you opened.
+
+### `Hosted authorization is not configured`
+
+The relay does not have `SFLENS_SALESFORCE_CLIENT_ID`. Set it as a Cloudflare Worker secret, verify the callback URL and PKCE settings, then redeploy the Worker. Local Connect does not need this setting.
 
 ### `OAUTH_NOT_CONFIGURED`
 
-Use **Authorize Salesforce** with the local bridge. A separately configured External Client App is only needed for the optional direct PKCE OAuth path; it is not required for Salesforce CLI authorization.
+Use Local Connect with Salesforce CLI, or finish configuring the hosted Salesforce OAuth app and Cloudflare Worker secret described above.
 
 ### `localhost:1717/OauthSuccess` or connection refused
 
