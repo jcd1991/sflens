@@ -16,7 +16,7 @@ jobs:
       - run: npm run build -w @sflens/web
         env:
           VITE_SALESFORCE_API_VERSION: ${{ vars.SFLENS_SALESFORCE_API_VERSION || '62.0' }}
-          VITE_SFLENS_RELAY_URL: ${{ vars.SFLENS_RELAY_URL || 'https://sflens-relay.carito5290.workers.dev' }}
+          VITE_SFLENS_RELAY_URL: ${{ vars.SFLENS_RELAY_URL || 'https://sflens-relay.eventyo.com' }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with: {path: apps/web/dist}

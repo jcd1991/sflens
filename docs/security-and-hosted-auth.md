@@ -111,7 +111,7 @@ The session map is intentionally volatile. A Worker isolate recycle, deployment,
    ```
 
 5. Deploy the Worker, check `/health`, and run the relay tests.
-6. Build the GitHub Pages site with `VITE_SFLENS_RELAY_URL` pointing at the Worker. Do not add the consumer key as a Vite secret or GitHub Pages secret.
+6. Build the GitHub Pages site with `VITE_SFLENS_RELAY_URL` pointing at the custom Worker hostname. Do not add the consumer key as a Vite secret or GitHub Pages secret.
 7. Test with a personal Developer Edition org before any public announcement.
 
 ### Routine review
