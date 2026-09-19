@@ -529,6 +529,15 @@ main {
   color: #d7e0ea;
   font-size: 10px;
 }
+.auth-hosts {
+  display: grid;
+  gap: 5px;
+  margin-top: 4px;
+}
+.auth-hosts code {
+  color: #d7e0ea;
+  font-size: 11px;
+}
 footer {
   max-width: 1360px;
   margin: auto;
