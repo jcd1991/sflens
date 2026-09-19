@@ -248,6 +248,10 @@ SF Lens does not provide a hosted log archive, shared backend, automatic replay,
 
 For Hosted Connect, confirm the relay is deployed, its Salesforce client ID secret is set, and the Salesforce app callback matches the relay callback URL. For Local Connect, confirm that the local bridge is still running and that its allowed origins include the page you opened.
 
+### `ERR_BLOCKED_BY_CLIENT` during Hosted Connect
+
+Some browser privacy or security extensions block Cloudflare Worker hostnames before the request reaches SF Lens. If the hosted page loads but the OAuth handoff is blocked, allowlist only `sflens-relay.eventyo.com` and Salesforce’s login host in that extension, or retry in a clean browser profile. Do not disable browser security globally. The relay’s `/health` response is a safe way to distinguish a browser-side block from a server outage.
+
 ### `Hosted authorization is not configured`
 
 The relay does not have `SFLENS_SALESFORCE_CLIENT_ID`. Set it as a Cloudflare Worker secret, verify the callback URL and PKCE settings, then redeploy the Worker. Local Connect does not need this setting.
