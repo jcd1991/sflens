@@ -39,6 +39,13 @@ function logTime(value?: string) {
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
+function bridgeError(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : "";
+  if (/failed to fetch|load failed|networkerror/i.test(message)) {
+    return "Local Salesforce bridge unavailable. Start `npm run dev -w @sflens/bridge` or continue in Demo mode.";
+  }
+  return message || fallback;
+}
 export function App() {
   const [raw, setRaw] = useState(demoLog),
     [mode, setMode] = useState<Mode>("Demo"),
@@ -127,7 +134,7 @@ export function App() {
   const toggleDebug = async () => {
     setLoading(true);
     try { const d = await api(`/orgs/${encodeURIComponent(org)}/debug-logging`, debugEnabled ? { method: "DELETE" } : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ minutes: 15 }) }); setDebugEnabled(Boolean(d.enabled)); setDebugExpires(d.expiresAt); setStatus(d.enabled ? "Debug logging enabled for 15 minutes" : "Debug logging disabled"); }
-    catch (e) { setStatus(e instanceof Error ? e.message : "Could not change debug logging."); } finally { setLoading(false); }
+    catch (e) { setStatus(bridgeError(e, "Could not change debug logging.")); } finally { setLoading(false); }
   };
   const refresh = async (alias = org, silent = false) => {
     if (!alias) return;
@@ -149,7 +156,7 @@ export function App() {
       }
       if (!silent) setStatus(`${d.records?.length || 0} logs loaded`);
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : "Could not load logs.");
+      setStatus(bridgeError(e, "Could not load logs."));
     } finally {
       if (!silent) setLoading(false);
     }
@@ -209,7 +216,7 @@ export function App() {
       }
       if (data.authorizationUrl) window.location.assign(data.authorizationUrl);
       else throw Error("Salesforce authorization could not be started.");
-    } catch (e) { setStatus(e instanceof Error ? e.message : "Could not start Salesforce authorization."); }
+    } catch (e) { setStatus(bridgeError(e, "Could not start Salesforce authorization.")); setConnectOpen(true); }
   };
   const finishConnection = async () => {
     try {
@@ -227,7 +234,7 @@ export function App() {
       await refresh(d.orgs[0].alias);
       setStatus(enabled ? "Connected · debug logging enabled for 15 minutes" : "Connected · debug logging already enabled");
       window.history.replaceState({}, "", window.location.pathname);
-    } catch (e) { setStatus(e instanceof Error ? e.message : "Could not finish Salesforce authorization."); }
+    } catch (e) { setStatus(bridgeError(e, "Could not finish Salesforce authorization.")); setMode("Demo"); setConnectOpen(true); }
   };
   useEffect(() => {
     const oauthResult = new URLSearchParams(window.location.search).get("oauth");
@@ -248,10 +255,11 @@ export function App() {
           await loadDebugStatus(data.org.alias);
           await refresh(data.org.alias);
           setStatus("Connected · session resumed");
-        } catch {
-          forget("session", "sflens.orgAlias");
+        } catch (e) {
           forget("session", "sflens.authSession");
-            setConnectOpen(true);
+          setMode("Demo");
+          setStatus(bridgeError(e, "Saved Salesforce session could not be resumed. Continuing in Demo mode."));
+          setConnectOpen(true);
         }
       })();
     }

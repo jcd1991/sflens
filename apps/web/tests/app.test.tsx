@@ -20,4 +20,11 @@ describe("SF Lens browser workflow", () => {
     render(<App />); fireEvent.click(screen.getByRole("button", { name: "Authorize Salesforce" }));
     await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument(), { timeout: 3000 });
   });
+  it("explains when the local bridge is unavailable instead of showing a raw fetch error", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Authorize Salesforce" }));
+    await waitFor(() => expect(screen.getAllByText(/Local Salesforce bridge unavailable/).length).toBeGreaterThan(0));
+    expect(screen.queryByText("Failed to fetch")).not.toBeInTheDocument();
+  });
 });
