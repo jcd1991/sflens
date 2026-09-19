@@ -116,7 +116,7 @@ export function App() {
               : "upload",
         name:
           mode === "Demo"
-            ? "Curated N+1 + governor failure"
+            ? "Opportunity Flow · loop + governor failure"
             : mode === "Connected"
               ? "Salesforce Apex log"
               : "Uploaded log",
@@ -433,7 +433,7 @@ export function App() {
         relaySession.current = "";
         setMode("Demo");
         setStatus(salesforceOAuthError(error, { hosted: true }));
-        setConnectOpen(true);
+        setConnectOpen(false);
       });
       return;
     }
@@ -441,7 +441,7 @@ export function App() {
       void finishBrowserConnection(code, state).catch((error) => {
         setMode("Demo");
         setStatus(salesforceOAuthError(error, { hosted: true }));
-        setConnectOpen(true);
+        setConnectOpen(false);
       });
       return;
     }
@@ -454,14 +454,15 @@ export function App() {
             void finishRelayConnection(savedSession).catch(() => {
               forget("session", "sflens.relay.session");
               relaySession.current = "";
-              setConnectOpen(true);
+              setStatus("Saved Salesforce session expired · Demo mode");
+              setConnectOpen(false);
             });
           } else {
-            setConnectOpen(true);
+            setConnectOpen(false);
           }
           return;
         }
-        setConnectOpen(true);
+        setConnectOpen(false);
         return;
       }
       const savedAlias = stored("session", "sflens.orgAlias") || stored("local", "sflens.orgAlias");
@@ -658,7 +659,7 @@ export function App() {
             className={mode === "Connected" ? "active" : ""}
             onClick={() => mode === "Connected" ? disconnect() : setConnectOpen(true)}
           >
-            ↯ {mode === "Connected" ? "Disconnect" : "Connected"}
+            ↯ {mode === "Connected" ? "Disconnect" : "Connect Salesforce"}
           </button>
         </div>
         <div className="status">

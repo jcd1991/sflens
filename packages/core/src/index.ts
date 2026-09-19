@@ -529,7 +529,46 @@ export function correlateTransactions(
   }
   return groups;
 }
-export const demoLog = `09:41:12.000 (100)|USER_INFO|[EXTERNAL]|clay@example.test\n09:41:12.010 (110)|EXECUTION_STARTED\n09:41:12.012 (112)|CODE_UNIT_STARTED|[EXTERNAL]|OpportunityTrigger on Opportunity trigger event BeforeUpdate\n09:41:12.100 (200)|SOQL_EXECUTE_BEGIN|[1]|Aggregations:0|SELECT Id,Name FROM Account WHERE Id = :tmp\n09:41:12.130 (230)|SOQL_EXECUTE_END|[1]|Rows:1\n09:41:12.140 (240)|SOQL_EXECUTE_BEGIN|[1]|SELECT Id FROM Contact WHERE AccountId = :tmp\n09:41:12.170 (270)|SOQL_EXECUTE_END|[1]|Rows:1\n09:41:12.180 (280)|SOQL_EXECUTE_BEGIN|[1]|SELECT Id FROM Contact WHERE AccountId = :tmp\n09:41:12.210 (310)|SOQL_EXECUTE_END|[1]|Rows:1\n09:41:12.220 (320)|LIMIT_USAGE_FOR_NS|(default)|Number of SOQL queries: 91 out of 100\n09:41:12.230 (330)|USER_DEBUG|[42]|DEBUG|Contact merge candidate evaluated\n09:41:12.250 (350)|FATAL_ERROR|System.LimitException: Too many SOQL queries: 101\n09:41:12.260 (360)|EXECUTION_FINISHED`;
+export const demoLog = [
+  "09:41:12.000 (100)|USER_INFO|[EXTERNAL]|demo.user@example.test",
+  "09:41:12.010 (110)|EXECUTION_STARTED",
+  "09:41:12.012 (112)|CODE_UNIT_STARTED|[EXTERNAL]|OpportunityTrigger on Opportunity trigger event BeforeUpdate",
+  "09:41:12.020 (120)|FLOW_START|INTERVIEW_ID=flow-opp-001|FLOW_NAME=Opportunity Lifecycle|VERSION=3",
+  "09:41:12.030 (130)|FLOW_ELEMENT_BEGIN|ELEMENT=Loop Contacts|TYPE=LOOP",
+  "09:41:12.040 (140)|FLOW_ELEMENT_BEGIN|ELEMENT=Get Contact|TYPE=GET_RECORDS",
+  "09:41:12.100 (200)|SOQL_EXECUTE_BEGIN|[1]|Aggregations:0|SELECT Id,Name FROM Account WHERE Id = :tmp",
+  "09:41:12.130 (230)|SOQL_EXECUTE_END|[1]|Rows:1",
+  "09:41:12.140 (240)|SOQL_EXECUTE_BEGIN|[2]|Aggregations:0|SELECT Id FROM Contact WHERE AccountId = :tmp",
+  "09:41:12.170 (270)|SOQL_EXECUTE_END|[2]|Rows:1",
+  "09:41:12.180 (280)|SOQL_EXECUTE_BEGIN|[3]|Aggregations:0|SELECT Id FROM Contact WHERE AccountId = :tmp",
+  "09:41:12.210 (310)|SOQL_EXECUTE_END|[3]|Rows:1",
+  "09:41:12.220 (320)|SOQL_EXECUTE_BEGIN|[4]|Aggregations:0|SELECT Id FROM Contact WHERE AccountId = :tmp",
+  "09:41:12.250 (350)|SOQL_EXECUTE_END|[4]|Rows:1",
+  "09:41:12.260 (360)|FLOW_ELEMENT_END|ELEMENT=Get Contact|TYPE=GET_RECORDS",
+  "09:41:12.270 (370)|FLOW_ELEMENT_BEGIN|ELEMENT=Update Contact|TYPE=UPDATE",
+  "09:41:12.280 (380)|DML_BEGIN|[45]|Update Contact",
+  "09:41:12.290 (390)|DML_END|[45]|Update Contact|Rows:1",
+  "09:41:12.300 (400)|DML_BEGIN|[45]|Update Contact",
+  "09:41:12.310 (410)|DML_END|[45]|Update Contact|Rows:1",
+  "09:41:12.320 (420)|DML_BEGIN|[45]|Update Contact",
+  "09:41:12.330 (430)|DML_END|[45]|Update Contact|Rows:1",
+  "09:41:12.340 (440)|FLOW_ELEMENT_ERROR|ELEMENT=Update Contact|TYPE=UPDATE|ERROR=FIELD_CUSTOM_VALIDATION_EXCEPTION",
+  "09:41:12.350 (450)|FLOW_ELEMENT_BEGIN|ELEMENT=Notify Owner|TYPE=SUBFLOW",
+  "09:41:12.360 (460)|CALLOUT_REQUEST|[52]|POST https://example.invalid/notify",
+  "09:41:12.390 (490)|CALLOUT_RESPONSE|[52]|StatusCode:200",
+  "09:41:12.400 (500)|FLOW_ELEMENT_END|ELEMENT=Notify Owner|TYPE=SUBFLOW",
+  "09:41:12.410 (510)|FLOW_ELEMENT_END|ELEMENT=Loop Contacts|TYPE=LOOP",
+  "09:41:12.420 (520)|FLOW_INTERVIEW_FINISHED_LIMIT_USAGE|Number of SOQL queries: 91 out of 100|Number of query rows: 4870 out of 50000",
+  "09:41:12.430 (530)|LIMIT_USAGE_FOR_NS|(default)|Maximum CPU time: 7420 out of 10000",
+  "09:41:12.440 (540)|LIMIT_USAGE_FOR_NS|(default)|Maximum heap size: 4800000 out of 6000000",
+  "09:41:12.450 (550)|LIMIT_USAGE_FOR_NS|(default)|Number of DML statements: 42 out of 150",
+  "09:41:12.460 (560)|LIMIT_USAGE_FOR_NS|(default)|Number of callouts: 2 out of 100",
+  "09:41:12.470 (570)|USER_DEBUG|[42]|DEBUG|Contact merge candidate evaluated",
+  "09:41:12.480 (580)|EXCEPTION_THROWN|[67]|System.DmlException: Update failed",
+  "09:41:12.490 (590)|FATAL_ERROR|System.LimitException: Too many SOQL queries: 101",
+  "09:41:12.500 (600)|FLOW_INTERVIEW_FINISHED|INTERVIEW_ID=flow-opp-001",
+  "09:41:12.510 (610)|EXECUTION_FINISHED",
+].join("\n");
 export function redact(text: string, pii = false) {
   const out = text.replace(
     /(Authorization|session(Id)?|password|client_secret)\s*[:=]\s*[^\s,|]+/gi,
