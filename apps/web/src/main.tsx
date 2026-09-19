@@ -421,7 +421,7 @@ export function App() {
         forget("session", "sflens.relay.session");
         relaySession.current = "";
         setMode("Demo");
-        setStatus(salesforceOAuthError(error));
+        setStatus(salesforceOAuthError(error, { hosted: true }));
         setConnectOpen(true);
       });
       return;
@@ -429,7 +429,7 @@ export function App() {
     if (code && isHostedPage() && !hostedRelayUrl) {
       void finishBrowserConnection(code, state).catch((error) => {
         setMode("Demo");
-        setStatus(salesforceOAuthError(error));
+        setStatus(salesforceOAuthError(error, { hosted: true }));
         setConnectOpen(true);
       });
       return;
@@ -945,6 +945,7 @@ export function App() {
             <h3>Connect Salesforce</h3>
             <p>{isHostedPage() ? "Authorize SF Lens through Salesforce. No local install or bridge is required for the hosted read-only connection." : "Authorize SF Lens to read existing ApexLogs from your Salesforce org. Salesforce will show its normal login and consent screen, then return you here."}</p>
             <div className="ci-status"><b>Secure · read-only · no hosted log archive</b><span>{hostedRelayUrl ? "Salesforce handles your sign-in. The relay keeps only a short-lived access token in volatile memory, never stores logs, and sends bounded log data to this browser for local redaction before display or export." : isHostedPage() ? "Salesforce handles your sign-in. SF Lens requests API access, keeps the access token only in this tab’s memory, and redacts logs before display or export." : "Your credentials stay with Salesforce and the local bridge. Logs are processed in this browser session and never sent to a hosted service."}</span></div>
+            {isHostedPage() && <small className="auth-help">If your browser reports <code>ERR_BLOCKED_BY_CLIENT</code>, allowlist only the SF Lens relay and Salesforce login/org hosts in that browser’s privacy or security extension. Do not disable browser security globally.</small>}
             {isHostedPage() && !hostedRelayUrl && !browserClientId && <small className="error">Hosted authorization is not configured on this deployment yet. Continue in Demo mode or run SF Lens locally.</small>}
             <div className="modal-actions">
               <button onClick={showDemo}>Continue in Demo</button>

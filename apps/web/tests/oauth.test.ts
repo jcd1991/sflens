@@ -13,5 +13,7 @@ describe("Salesforce OAuth helpers", () => {
   it("normalizes org aliases and hides raw network errors", () => {
     expect(salesforceOrgAlias("00D-123", "https://example.my.salesforce.com")).toBe("oauth-00d123");
     expect(salesforceOAuthError(new TypeError("Failed to fetch"))).toMatch(/could not be reached/i);
+    expect(salesforceOAuthError(new TypeError("Failed to fetch"), { hosted: true })).toMatch(/ERR_BLOCKED_BY_CLIENT/i);
+    expect(salesforceOAuthError(new TypeError("Failed to fetch"), { hosted: true })).toMatch(/not a Salesforce CORS error/i);
   });
 });

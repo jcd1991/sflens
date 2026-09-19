@@ -250,7 +250,7 @@ For Hosted Connect, confirm the relay is deployed, its Salesforce client ID secr
 
 ### `ERR_BLOCKED_BY_CLIENT` during Hosted Connect
 
-Some browser privacy or security extensions block Cloudflare Worker hostnames before the request reaches SF Lens. If the hosted page loads but the OAuth handoff is blocked, allowlist only `sflens-relay.eventyo.com` and Salesforce’s login host in that extension, or retry in a clean browser profile. Do not disable browser security globally. The relay’s `/health` response is a safe way to distinguish a browser-side block from a server outage.
+Some browser privacy or security extensions block Cloudflare Worker or Salesforce hostnames before the request reaches SF Lens. If the hosted page loads but the OAuth handoff is blocked, allowlist only `sflens-relay.eventyo.com`, `login.salesforce.com`, and the authorized org host (for example, `your-domain.my.salesforce.com`) in that extension, or retry in a clean browser profile. Do not disable browser security globally. The relay’s `/health` response is a safe way to distinguish a browser-side block from a server outage. A browser page that says `ERR_BLOCKED_BY_CLIENT` is a local browser-policy block, not a Salesforce callback or CORS failure.
 
 ### `Hosted authorization is not configured`
 

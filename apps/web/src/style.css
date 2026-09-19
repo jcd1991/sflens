@@ -518,6 +518,17 @@ main {
   color: #ff8585;
   margin-top: 12px;
 }
+.auth-help {
+  display: block;
+  margin-top: 12px;
+  color: #9aaabd;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.auth-help code {
+  color: #d7e0ea;
+  font-size: 10px;
+}
 footer {
   max-width: 1360px;
   margin: auto;
