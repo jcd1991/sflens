@@ -22,7 +22,7 @@ Salesforce sign-in and consent
               │ authorization code + PKCE
               ▼
 GitHub Pages React app ── opaque session in sessionStorage ──► Cloudflare Worker relay
-       │                                                        │ volatile access token
+       │                                                        │ short-lived DO session
        │                                                        │ bounded Tooling API reads
        ▼                                                        ▼
 browser parser, redaction, exports                         Salesforce org
@@ -31,18 +31,18 @@ Local-only alternative:
 React app ── loopback session/startup token ──► local bridge ──► Salesforce CLI / Tooling API
 ```
 
-The hosted Worker is a relay, not a log archive. It keeps a Salesforce access token in a process-local memory map for at most one hour or the shorter Salesforce expiry. It does not write the token, logs, or org records to KV, R2, D1, Durable Objects, a database, analytics, or a request log. Cloudflare can still have platform-level operational telemetry outside this repository; configure account-level retention and access controls separately.
+The hosted Worker is a relay, not a log archive. It keeps only the Salesforce access token and safe org/session metadata in one Durable Object-backed record for at most one hour or the shorter Salesforce expiry. OAuth state expires after ten minutes and is consumed once. It never writes logs or org records to the store. Cloudflare can still have platform-level operational telemetry outside this repository; configure account-level retention and access controls separately.
 
 ## Hosted OAuth flow
 
 1. The user chooses Production / Developer Org or Sandbox. The browser navigates to `/oauth/start?environment=production` or `/oauth/start?environment=sandbox` on the Worker.
-2. The Worker creates a high-entropy `state` and PKCE verifier, stores them in volatile memory for ten minutes, and redirects to Salesforce.
+2. The Worker creates a high-entropy `state` and PKCE verifier, stores them in the session Durable Object for ten minutes, and redirects to Salesforce.
 3. Salesforce performs sign-in, MFA, and consent. SF Lens never sees the Salesforce password or MFA code.
 4. Salesforce redirects to the fixed Worker callback URL.
 5. The Worker validates and consumes `state`, exchanges the code with the PKCE verifier, and calls the Salesforce identity URL returned by Salesforce.
 6. The Worker creates a high-entropy opaque session identifier and redirects to the GitHub Pages URL using a URL fragment. The Salesforce access token is never placed in that URL.
 7. The browser sends the opaque identifier in `X-SFLens-Session` for subsequent read-only requests, then immediately removes the fragment from the address bar.
-8. The browser keeps that opaque identifier only in `sessionStorage`. Disconnect removes it. The Worker expires it after one hour, on the shorter Salesforce expiry, or when the Worker process is recycled.
+8. The browser keeps that opaque identifier only in `sessionStorage`. Disconnect removes it. The Durable Object expires it after one hour or the shorter Salesforce expiry; it contains no log body.
 
 The hosted External Client App is a public OAuth client. It uses authorization code + PKCE and the `api` scope. No Salesforce client secret is required or shipped to the browser. The client ID is a public identifier; the Worker’s secret is the only deployment credential and is configured with `wrangler secret`, never in GitHub Pages build output.
 
@@ -94,9 +94,9 @@ The Worker permits only the exact published origin. It does not trust a user-pro
 
 Redaction is a presentation and export safeguard, not a guarantee that the source log is harmless. Do not paste raw logs into issues, chat, public pull requests, browser screenshots, or support tickets. Review generated HTML/JSON/SARIF and AI context before sharing. The app does not send the log to an LLM automatically.
 
-### Worker availability and memory lifecycle
+### Worker availability and session lifecycle
 
-The session map is intentionally volatile. A Worker isolate recycle, deployment, or scale-out event can discard sessions and require the user to authorize again. This is the desired privacy boundary for the current release, but it is not a durable multi-user session architecture. If SF Lens later needs durable sessions, use an explicit security design review: encrypted-at-rest token storage, strict TTL and revocation, tenant isolation, audit controls, rate limiting, and a policy decision about whether raw logs may ever leave the browser.
+The relay uses a single Durable Object-backed session store because Worker isolates are not a shared process. The store contains only short-lived OAuth state and access-token/session metadata, never ApexLog bodies. Strict TTLs, one-time state consumption, exact origin checks, and disconnect/expiry behavior remain in force. If the hosted relay later becomes a larger multi-tenant service, add an explicit review for tenant isolation, audit controls, rate limiting, and revocation operations.
 
 ## Operational checklist
 
@@ -137,8 +137,8 @@ The session map is intentionally volatile. A Worker isolate recycle, deployment,
 ## Known limitations
 
 - Salesforce org administrators can change OAuth policies, session lifetimes, trace-log retention, and API availability.
-- The relay does not provide durable sessions, centralized logout, per-user rate quotas, or an audit dashboard in this release.
-- A Worker process recycle can log a user out. This is expected.
+- The relay does not provide centralized logout, per-user rate quotas, or an audit dashboard in this release.
+- A Durable Object or Salesforce session expiry can log a user out. This is expected.
 - GitHub Pages is static and cannot run the local bridge or enable trace flags. Hosted mode is read-only.
 - The shared redactor is deterministic but cannot know every organization-specific secret format. Treat exported material as sensitive until reviewed.
 - EventLogFile, broad observability, long-term archives, and automatic remediation are deliberately out of scope.

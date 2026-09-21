@@ -105,7 +105,7 @@ Click **Upload log** and select a `.log` or `.txt` file up to 25 MB. The file is
 
 SF Lens has two connection paths:
 
-- **Hosted Connect** uses Salesforce OAuth authorization-code + PKCE through the small Cloudflare Worker relay at `sflens-relay.eventyo.com`. It needs no install, terminal, or per-org CORS setup, is read-only, and keeps only a short-lived access token in relay memory. Log bodies are bounded in the relay, then redacted in the browser before display, copy, or export.
+- **Hosted Connect** uses Salesforce OAuth authorization-code + PKCE through the small Cloudflare Worker relay at `sflens-relay.eventyo.com`. It needs no install, terminal, or per-org CORS setup, is read-only, and keeps only a short-lived access token in a Durable Object-backed session store. Log bodies are bounded in the relay, then redacted in the browser before display, copy, or export.
 - **Local Connect** uses Salesforce CLI through the loopback bridge. It is the advanced path and is required for the optional **Enable debug logging** / **Disable debug logging** controls.
 
 The hosted path uses one Salesforce OAuth app configured by the SF Lens maintainer—not a new app in every customer org. The relay callback is configured on that app; users only complete Salesforce’s normal authorization screen. The Salesforce OAuth app must use PKCE and allow the relay callback URL.
@@ -126,7 +126,7 @@ Use a public-client Salesforce External Client App or Connected App with PKCE en
 
 No Chrome extension, browser allowlist, local bridge, or per-org CORS configuration is required. SF Lens uses the hosted relay to complete the OAuth handoff and keeps the Salesforce access token off the browser. If you do not connect an org, choose **Continue in Demo** to explore the product with a synthetic, fully local fixture.
 
-The hosted connection reads `ApexLog` summaries and bodies through the relay. It does not enable trace flags, modify records, deploy metadata, execute Apex, or store logs. The relay session is short-lived and held in volatile Worker memory; users may need to authorize again after a session expires or the Worker is recycled.
+The hosted connection reads `ApexLog` summaries and bodies through the relay. It does not enable trace flags, modify records, deploy metadata, execute Apex, or store logs. The relay session is short-lived and stored only as bounded OAuth/session metadata with a TTL; users may need to authorize again after a session expires or the Worker is redeployed.
 
 ### Local authorization
 

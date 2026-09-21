@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test, afterEach } from "node:test";
-import { route } from "../src/index.js";
+import { route, SflensSessionStore } from "../src/index.js";
 
 const env = {
   SFLENS_SALESFORCE_CLIENT_ID: "test-public-client",
@@ -14,14 +14,14 @@ const env = {
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 
-async function request(path, init = {}, origin = env.SFLENS_WEB_ORIGIN) {
+async function request(path, init = {}, origin = env.SFLENS_WEB_ORIGIN, requestEnv = env) {
   const headers = new Headers(init.headers);
   if (origin) headers.set("Origin", origin);
-  return route(new Request(`https://relay.example.test${path}`, { ...init, headers }), env);
+  return route(new Request(`https://relay.example.test${path}`, { ...init, headers }), requestEnv);
 }
 
-async function establishSession() {
-  const start = await request("/oauth/start", {}, "");
+async function establishSession(requestEnv = env) {
+  const start = await request("/oauth/start", {}, "", requestEnv);
   assert.equal(start.status, 302);
   const authorize = new URL(start.headers.get("location"));
   const original = globalThis.fetch;
@@ -35,7 +35,7 @@ async function establishSession() {
     }
     return original(input);
   };
-  const callback = await route(new Request(`https://relay.example.test/oauth/callback?code=one-time-code&state=${encodeURIComponent(authorize.searchParams.get("state"))}`), env);
+  const callback = await route(new Request(`https://relay.example.test/oauth/callback?code=one-time-code&state=${encodeURIComponent(authorize.searchParams.get("state"))}`), requestEnv);
   assert.equal(callback.status, 302);
   const callbackLocation = callback.headers.get("location");
   assert.doesNotMatch(callbackLocation, /access-token-never-returned/);
@@ -63,6 +63,24 @@ test("creates an opaque PKCE session without putting the access token in the red
   const session = await establishSession();
   assert.ok(session);
   const orgs = await request("/orgs", { headers: { "x-sflens-session": session } });
+  assert.equal(orgs.status, 200);
+  assert.deepEqual(await orgs.json(), { orgs: [{ alias: "oauth-000000000001", username: "developer@example.test", instanceUrl: "https://example.my.salesforce.com", orgId: "00D000000000001" }] });
+});
+
+test("retains OAuth state and sessions across requests with the Durable Object store", async () => {
+  const storage = new Map();
+  const object = new SflensSessionStore({ storage: {
+    async get(key) { return storage.get(key); },
+    async put(key, value) { storage.set(key, value); },
+    async delete(key) { storage.delete(key); },
+  } });
+  const namespace = {
+    idFromName() { return "sflens-auth-state"; },
+    get() { return { fetch(input, init) { return object.fetch(new Request(input, init)); } }; },
+  };
+  const durableEnv = { ...env, SFLENS_SESSION_STORE: namespace };
+  const session = await establishSession(durableEnv);
+  const orgs = await request("/orgs", { headers: { "x-sflens-session": session } }, env.SFLENS_WEB_ORIGIN, durableEnv);
   assert.equal(orgs.status, 200);
   assert.deepEqual(await orgs.json(), { orgs: [{ alias: "oauth-000000000001", username: "developer@example.test", instanceUrl: "https://example.my.salesforce.com", orgId: "00D000000000001" }] });
 });

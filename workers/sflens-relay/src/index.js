@@ -5,6 +5,7 @@ const pendingTtlMs = 10 * 60 * 1000;
 const maxFilterLength = 200;
 const maxLogBytes = 25 * 1024 * 1024;
 const maxJsonBytes = 2 * 1024 * 1024;
+const durableStoreName = "sflens-auth-state";
 
 function json(data, status = 200, origin = "") {
   const headers = {
@@ -62,6 +63,58 @@ function cleanup() {
   for (const [key, value] of sessions) if (value.expiresAt < now) sessions.delete(key);
 }
 
+function durableStore(env) {
+  const namespace = env.SFLENS_SESSION_STORE;
+  if (!namespace?.idFromName || !namespace?.get) return null;
+  return namespace.get(namespace.idFromName(durableStoreName));
+}
+
+async function durableCommand(env, operation, kind, key, value, ttlMs) {
+  const stub = durableStore(env);
+  if (!stub) return undefined;
+  const response = await stub.fetch("https://sflens-session-store/state", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ operation, kind, key, value, ttlSeconds: Math.max(1, Math.ceil(ttlMs / 1000)) }),
+  });
+  if (response.status === 404) return undefined;
+  if (!response.ok) throw new Error("SESSION_STORE_UNAVAILABLE");
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+async function putState(env, kind, key, value, ttlMs) {
+  if (durableStore(env)) {
+    await durableCommand(env, "put", kind, key, value, ttlMs);
+    return;
+  }
+  cleanup();
+  (kind === "pending" ? pending : sessions).set(key, value);
+}
+
+async function readState(env, kind, key) {
+  if (durableStore(env)) return durableCommand(env, "get", kind, key, undefined, 1);
+  cleanup();
+  return (kind === "pending" ? pending : sessions).get(key);
+}
+
+async function takeState(env, kind, key) {
+  if (durableStore(env)) return durableCommand(env, "take", kind, key, undefined, 1);
+  cleanup();
+  const map = kind === "pending" ? pending : sessions;
+  const value = map.get(key);
+  map.delete(key);
+  return value;
+}
+
+async function deleteState(env, kind, key) {
+  if (durableStore(env)) {
+    await durableCommand(env, "delete", kind, key, undefined, 1);
+    return;
+  }
+  (kind === "pending" ? pending : sessions).delete(key);
+}
+
 function callbackUri(_request, env) {
   return env.SFLENS_CALLBACK_URI || "";
 }
@@ -71,10 +124,9 @@ function authorizedOrigin(request, env) {
   return origin === env.SFLENS_WEB_ORIGIN ? origin : "";
 }
 
-function authSession(request) {
+async function authSession(request, env) {
   const value = request.headers.get("x-sflens-session") || "";
-  cleanup();
-  return /^[A-Za-z0-9_-]{32,128}$/.test(value) ? sessions.get(value) : undefined;
+  return /^[A-Za-z0-9_-]{32,128}$/.test(value) ? readState(env, "session", value) : undefined;
 }
 
 function safeAlias(value) {
@@ -174,7 +226,7 @@ async function startOAuth(request, env) {
   const redirectUri = callbackUri(request, env);
   const verifier = randomToken(32);
   const state = randomToken(24);
-  pending.set(state, { verifier, redirectUri, loginUrl, expiresAt: Date.now() + pendingTtlMs });
+  await putState(env, "pending", state, { verifier, redirectUri, loginUrl, expiresAt: Date.now() + pendingTtlMs }, pendingTtlMs);
   const url = new URL("/services/oauth2/authorize", loginUrl);
   url.search = new URLSearchParams({
     response_type: "code",
@@ -190,8 +242,7 @@ async function startOAuth(request, env) {
 
 async function finishOAuth(request, env, url) {
   const state = url.searchParams.get("state") || "";
-  const entry = pending.get(state);
-  pending.delete(state);
+  const entry = await takeState(env, "pending", state);
   if (!entry || entry.expiresAt < Date.now()) return json({ error: "OAUTH_STATE_INVALID" }, 400);
   if (url.searchParams.get("error")) return json({ error: "OAUTH_DENIED" }, 400);
   const code = url.searchParams.get("code") || "";
@@ -216,7 +267,7 @@ async function finishOAuth(request, env, url) {
   if (!identityResponse.ok) return json({ error: "OAUTH_IDENTITY_FAILED" }, 502);
   const identity = await boundedJson(identityResponse);
   const sessionId = randomToken(32);
-  sessions.set(sessionId, {
+  const session = {
     accessToken: fields.access_token,
     instanceUrl,
     alias: safeAlias(identity.organization_id || fields.instance_url),
@@ -224,7 +275,8 @@ async function finishOAuth(request, env, url) {
     orgId: identity.organization_id || "",
     apiVersion: env.SFLENS_SALESFORCE_API_VERSION || "62.0",
     expiresAt: Date.now() + (() => { const seconds = Number(fields.expires_in); return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, sessionTtlMs) : sessionTtlMs; })(),
-  });
+  };
+  await putState(env, "session", sessionId, session, Math.max(1, session.expiresAt - Date.now()));
   return redirect(`${env.SFLENS_REDIRECT_URI}#sflens_session=${encodeURIComponent(sessionId)}`);
 }
 
@@ -237,7 +289,7 @@ async function route(request, env) {
   if (url.pathname === "/oauth/callback") {
     try { return await finishOAuth(request, env, url); } catch { return json({ error: "OAUTH_CALLBACK_FAILED" }, 502); }
   }
-  const session = authSession(request);
+  const session = await authSession(request, env);
   if (!session) return json({ error: "SESSION_EXPIRED" }, 401, origin);
   if (url.pathname === "/orgs") return json({ orgs: [{ alias: session.alias, username: session.username, instanceUrl: session.instanceUrl, orgId: session.orgId }] }, 200, origin);
   const logMatch = url.pathname.match(/^\/orgs\/([^/]+)\/logs(?:\/([^/]+)\/body)?$/);
@@ -271,4 +323,33 @@ async function route(request, env) {
 }
 
 export default { fetch: route };
+
+export class SflensSessionStore {
+  constructor(state) {
+    this.storage = state.storage;
+  }
+
+  async fetch(request) {
+    if (request.method !== "POST") return new Response(null, { status: 405 });
+    const body = await request.json();
+    const storageKey = `${body.kind}:${body.key}`;
+    if (!/^(pending|session)$/.test(body.kind) || !/^[A-Za-z0-9_-]{32,128}$/.test(body.key)) return new Response(null, { status: 400 });
+    if (body.operation === "put") {
+      await this.storage.put(storageKey, body.value, { expirationTtl: Math.max(1, Number(body.ttlSeconds) || 1) });
+      return new Response(null, { status: 204 });
+    }
+    if (body.operation === "delete") {
+      await this.storage.delete(storageKey);
+      return new Response(null, { status: 204 });
+    }
+    if (body.operation === "get" || body.operation === "take") {
+      const value = await this.storage.get(storageKey);
+      if (value === undefined) return new Response(null, { status: 404 });
+      if (body.operation === "take") await this.storage.delete(storageKey);
+      return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(null, { status: 400 });
+  }
+}
+
 export { route };

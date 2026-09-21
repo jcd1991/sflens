@@ -9,3 +9,11 @@ SFLENS_REDIRECT_URI = "https://jcd1991.github.io/sflens/"
 SFLENS_CALLBACK_URI = "https://sflens-relay.eventyo.com/oauth/callback"
 SFLENS_SALESFORCE_LOGIN_URL = "https://login.salesforce.com"
 SFLENS_SALESFORCE_API_VERSION = "62.0"
+
+[[durable_objects.bindings]]
+name = "SFLENS_SESSION_STORE"
+class_name = "SflensSessionStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SflensSessionStore"]
