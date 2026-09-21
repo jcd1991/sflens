@@ -455,15 +455,15 @@ export function App() {
             void finishRelayConnection(savedSession).catch(() => {
               forget("session", "sflens.relay.session");
               relaySession.current = "";
-              setStatus("Saved Salesforce session expired · Demo mode");
-              setConnectOpen(false);
+              setStatus("Saved Salesforce session expired · choose how to continue");
+              setConnectOpen(true);
             });
           } else {
-            setConnectOpen(false);
+            setConnectOpen(true);
           }
           return;
         }
-        setConnectOpen(false);
+        setConnectOpen(true);
         return;
       }
       const savedAlias = stored("session", "sflens.orgAlias") || stored("local", "sflens.orgAlias");
