@@ -75,6 +75,20 @@ test("allows only the configured browser origin and rejects stale sessions", asy
   assert.equal(expired.status, 401);
 });
 
+test("answers the browser CORS preflight without a response body", async () => {
+  const response = await request("/orgs", {
+    method: "OPTIONS",
+    headers: {
+      "access-control-request-method": "GET",
+      "access-control-request-headers": "x-sflens-session",
+    },
+  });
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get("access-control-allow-origin"), env.SFLENS_WEB_ORIGIN);
+  assert.equal(response.headers.get("access-control-allow-methods"), "GET,OPTIONS");
+  assert.equal(await response.text(), "");
+});
+
 test("bounds and validates the ApexLog query before sending it to Salesforce", async () => {
   const session = await establishSession();
   let queriedUrl = "";

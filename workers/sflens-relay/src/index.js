@@ -21,7 +21,7 @@ function json(data, status = 200, origin = "") {
     headers["access-control-allow-origin"] = origin;
     headers.vary = "Origin";
   }
-  return new Response(JSON.stringify(data), { status, headers });
+  return new Response(status === 204 ? null : JSON.stringify(data), { status, headers });
 }
 
 function redirect(location) {
