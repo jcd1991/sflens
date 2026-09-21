@@ -167,11 +167,15 @@ async function salesforce(session, path, init = {}) {
 
 async function startOAuth(request, env) {
   if (!env.SFLENS_SALESFORCE_CLIENT_ID || !env.SFLENS_REDIRECT_URI || !env.SFLENS_CALLBACK_URI || !env.SFLENS_WEB_ORIGIN) return json({ error: "OAUTH_NOT_CONFIGURED" }, 503);
+  const requestUrl = new URL(request.url);
+  const environment = requestUrl.searchParams.get("environment") || "production";
+  if (environment !== "production" && environment !== "sandbox") return json({ error: "INVALID_SALESFORCE_ENVIRONMENT" }, 400);
+  const loginUrl = environment === "sandbox" ? "https://test.salesforce.com" : (trustedSalesforceUrl(env.SFLENS_SALESFORCE_LOGIN_URL) || "https://login.salesforce.com");
   const redirectUri = callbackUri(request, env);
   const verifier = randomToken(32);
   const state = randomToken(24);
-  pending.set(state, { verifier, redirectUri, expiresAt: Date.now() + pendingTtlMs });
-  const url = new URL("/services/oauth2/authorize", env.SFLENS_SALESFORCE_LOGIN_URL);
+  pending.set(state, { verifier, redirectUri, loginUrl, expiresAt: Date.now() + pendingTtlMs });
+  const url = new URL("/services/oauth2/authorize", loginUrl);
   url.search = new URLSearchParams({
     response_type: "code",
     client_id: env.SFLENS_SALESFORCE_CLIENT_ID,
@@ -192,7 +196,7 @@ async function finishOAuth(request, env, url) {
   if (url.searchParams.get("error")) return json({ error: "OAUTH_DENIED" }, 400);
   const code = url.searchParams.get("code") || "";
   if (!code) return json({ error: "OAUTH_CODE_MISSING" }, 400);
-  const tokenResponse = await fetch(new URL("/services/oauth2/token", env.SFLENS_SALESFORCE_LOGIN_URL), {
+  const tokenResponse = await fetch(new URL("/services/oauth2/token", entry.loginUrl), {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({

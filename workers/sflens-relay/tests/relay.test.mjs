@@ -50,6 +50,15 @@ test("refuses OAuth startup when the public configuration is incomplete", async 
   assert.deepEqual(await response.json(), { error: "OAUTH_NOT_CONFIGURED" });
 });
 
+test("supports only the production and sandbox Salesforce login choices", async () => {
+  const production = await request("/oauth/start?environment=production");
+  assert.equal(new URL(production.headers.get("location")).hostname, "login.salesforce.com");
+  const sandbox = await request("/oauth/start?environment=sandbox");
+  assert.equal(new URL(sandbox.headers.get("location")).hostname, "test.salesforce.com");
+  const invalid = await request("/oauth/start?environment=custom");
+  assert.equal(invalid.status, 400);
+});
+
 test("creates an opaque PKCE session without putting the access token in the redirect", async () => {
   const session = await establishSession();
   assert.ok(session);

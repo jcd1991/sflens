@@ -103,8 +103,7 @@ export function App() {
     [ciOpen, setCiOpen] = useState(false),
     [moreOpen, setMoreOpen] = useState(false),
     [copied, setCopied] = useState(""),
-    [hostedReadOnly, setHostedReadOnly] = useState(false),
-    [hostedPreflightOpen, setHostedPreflightOpen] = useState(false);
+    [hostedReadOnly, setHostedReadOnly] = useState(false);
   const parsed = useMemo(
     () =>
       parseLog(raw, {
@@ -288,11 +287,12 @@ export function App() {
       setStatus(`${matches.length} matching log${matches.length === 1 ? "" : "s"} · searched ${queue.length}`);
     } finally { setGlobalSearching(false); }
   };
-  const startBrowserOAuth = async () => {
+  const startBrowserOAuth = async (loginUrl = browserLoginUrl) => {
     if (!browserClientId) throw Error("Hosted Salesforce authorization is not configured yet. Continue in Demo mode or run SF Lens locally.");
-    const start = await createSalesforceOAuthStart(browserOAuthConfig);
+    const start = await createSalesforceOAuthStart({ ...browserOAuthConfig, loginUrl });
     remember("session", "sflens.oauth.state", start.state);
     remember("session", "sflens.oauth.verifier", start.verifier);
+    remember("session", "sflens.oauth.loginUrl", loginUrl);
     window.location.assign(start.authorizationUrl);
   };
   const finishRelayConnection = async (session: string) => {
@@ -315,12 +315,14 @@ export function App() {
   const finishBrowserConnection = async (code: string, state: string) => {
     const expectedState = stored("session", "sflens.oauth.state");
     const verifier = stored("session", "sflens.oauth.verifier");
+    const loginUrl = stored("session", "sflens.oauth.loginUrl") || browserLoginUrl;
     forget("session", "sflens.oauth.state");
     forget("session", "sflens.oauth.verifier");
+    forget("session", "sflens.oauth.loginUrl");
     window.history.replaceState({}, "", window.location.pathname);
     if (!expectedState || !verifier || !state || state !== expectedState) throw Error("Salesforce authorization state was invalid. Start again.");
     if (!browserClientId) throw Error("Hosted Salesforce authorization is not configured yet.");
-    const response = await fetch(new URL("/services/oauth2/token", browserLoginUrl), {
+    const response = await fetch(new URL("/services/oauth2/token", loginUrl), {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -355,24 +357,23 @@ export function App() {
     await refresh(connection.alias);
     setStatus("Connected · hosted read-only session");
   };
-  const startHostedAuthorization = async () => {
+  const startHostedAuthorization = async (environment: "production" | "sandbox") => {
     setStatus("Opening Salesforce authorization…");
     try {
-      setHostedPreflightOpen(false);
+      const loginUrl = environment === "sandbox" ? "https://test.salesforce.com" : "https://login.salesforce.com";
       if (hostedRelayUrl) {
-        window.location.assign(`${hostedRelayUrl}/oauth/start`);
+        window.location.assign(`${hostedRelayUrl}/oauth/start?environment=${environment}`);
         return;
       }
-      await startBrowserOAuth();
+      await startBrowserOAuth(loginUrl);
     } catch (e) {
       setStatus(salesforceOAuthError(e, { hosted: true }));
-      setHostedPreflightOpen(true);
+      setConnectOpen(true);
     }
   };
   const connect = async () => {
     if (isHostedPage()) {
-      setConnectOpen(false);
-      setHostedPreflightOpen(true);
+      void startHostedAuthorization("production");
       return;
     }
     setStatus("Opening Salesforce authorization…");
@@ -602,7 +603,6 @@ export function App() {
     forget("session", "sflens.relay.session");
     setHostedReadOnly(false);
     setConnectOpen(false);
-    setHostedPreflightOpen(false);
     setMode("Demo");
     setRaw(demoLog);
     setQuery("");
@@ -956,41 +956,15 @@ export function App() {
         <div className="modal-backdrop">
           <div className="modal">
             <h3>Connect Salesforce</h3>
-            <p>{isHostedPage() ? "Authorize SF Lens through Salesforce. No local install or bridge is required for the hosted read-only connection." : "Authorize SF Lens to read existing ApexLogs from your Salesforce org. Salesforce will show its normal login and consent screen, then return you here."}</p>
-            <div className="ci-status"><b>Secure · read-only · no hosted log archive</b><span>{hostedRelayUrl ? "Salesforce handles your sign-in. The relay keeps only a short-lived access token in volatile memory, never stores logs, and sends bounded log data to this browser for local redaction before display or export." : isHostedPage() ? "Salesforce handles your sign-in. SF Lens requests API access, keeps the access token only in this tab’s memory, and redacts logs before display or export." : "Your credentials stay with Salesforce and the local bridge. Logs are processed in this browser session and never sent to a hosted service."}</span></div>
-            {isHostedPage() && <small className="auth-help">If your browser reports <code>ERR_BLOCKED_BY_CLIENT</code>, allowlist only the SF Lens relay and Salesforce login/org hosts in that browser’s privacy or security extension. Do not disable browser security globally.</small>}
+            <p>{isHostedPage() ? "Choose your Salesforce environment. Salesforce handles sign-in and consent, then SF Lens loads recent read-only ApexLogs." : "Authorize SF Lens to read existing ApexLogs from your Salesforce org. Salesforce will show its normal login and consent screen, then return you here."}</p>
+            <div className="ci-status"><b>Secure · read-only · no hosted log archive</b><span>{hostedRelayUrl ? "The relay keeps only a short-lived access token in volatile memory, never stores logs, and sends bounded log data to this browser for local redaction before display or export." : isHostedPage() ? "SF Lens requests API access, keeps the access token only in this tab’s memory, and redacts logs before display or export." : "Your credentials stay with Salesforce and the local bridge. Logs are processed in this browser session and never sent to a hosted service."}</span></div>
             {isHostedPage() && !hostedRelayUrl && !browserClientId && <small className="error">Hosted authorization is not configured on this deployment yet. Continue in Demo mode or run SF Lens locally.</small>}
             <div className="modal-actions">
               <button onClick={showDemo}>Continue in Demo</button>
-              <button
-                className="active"
-                onClick={connect}
-                disabled={isHostedPage() && !hostedRelayUrl && !browserClientId}
-              >
-                {isHostedPage() ? "Authorize in Salesforce" : "Authorize Salesforce"}
-              </button>
-            </div>
-            {status && <small className="error">{status}</small>}
-          </div>
-        </div>
-      )}
-      {hostedPreflightOpen && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <h3>Check browser access</h3>
-            <p>SF Lens cannot change Chrome’s extension settings, but it can show exactly what the OAuth handoff needs. If Chrome blocks any of these hosts, Salesforce authorization will stop before it can return to SF Lens.</p>
-            <div className="ci-status">
-              <b>Allow these hosts in your browser privacy/security extension</b>
-              <div className="auth-hosts">
-                <code>login.salesforce.com</code>
-                <code>*.my.salesforce.com</code>
-                <code>sflens-relay.eventyo.com</code>
-              </div>
-            </div>
-            <small className="auth-help">This is an allowlist reminder, not an automatic browser permission request. Use only these hosts; do not disable browser security globally. If your browser has no blocker, continue and Salesforce will show its normal login/consent screen.</small>
-            <div className="modal-actions">
-              <button onClick={() => { setHostedPreflightOpen(false); setConnectOpen(true); }}>Back</button>
-              <button className="active" onClick={() => void startHostedAuthorization()}>Continue to Salesforce</button>
+              {isHostedPage() ? <>
+                <button className="active" onClick={() => void startHostedAuthorization("production")} disabled={!hostedRelayUrl && !browserClientId}>Production / Developer Org</button>
+                <button className="active" onClick={() => void startHostedAuthorization("sandbox")} disabled={!hostedRelayUrl && !browserClientId}>Sandbox</button>
+              </> : <button className="active" onClick={connect}>Authorize Salesforce</button>}
             </div>
             {status && <small className="error">{status}</small>}
           </div>

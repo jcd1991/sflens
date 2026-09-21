@@ -54,7 +54,7 @@ export function salesforceOAuthError(value: unknown, options: { hosted?: boolean
   if (/invalid_grant|invalid code|expired/i.test(message)) return "Salesforce authorization expired. Start authorization again.";
   if (/cors|failed to fetch|networkerror|load failed/i.test(message)) {
     if (options.hosted) {
-      return "Your browser blocked the Salesforce authorization handoff. If Chrome shows ERR_BLOCKED_BY_CLIENT, allowlist login.salesforce.com, your Salesforce org host, and sflens-relay.eventyo.com, then retry. This is a browser privacy/security block, not a Salesforce CORS error.";
+      return "Salesforce authorization could not be reached in this browser. Retry from the same Salesforce sign-in session or a clean tab; SF Lens does not require a Chrome extension or per-org setup.";
     }
     return "Salesforce could not be reached from this page. Check the Salesforce app callback and CORS settings, then try again.";
   }

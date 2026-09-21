@@ -35,7 +35,7 @@ The hosted Worker is a relay, not a log archive. It keeps a Salesforce access to
 
 ## Hosted OAuth flow
 
-1. The browser navigates to `/oauth/start` on the Worker.
+1. The user chooses Production / Developer Org or Sandbox. The browser navigates to `/oauth/start?environment=production` or `/oauth/start?environment=sandbox` on the Worker.
 2. The Worker creates a high-entropy `state` and PKCE verifier, stores them in volatile memory for ten minutes, and redirects to Salesforce.
 3. Salesforce performs sign-in, MFA, and consent. SF Lens never sees the Salesforce password or MFA code.
 4. Salesforce redirects to the fixed Worker callback URL.
@@ -60,6 +60,8 @@ The Worker exposes only these routes:
 | `GET /orgs/:alias/logs/:id/body` | opaque session | returns one validated `ApexLog` body, capped at 25 MB |
 
 There is no hosted route for DML, Apex execution, metadata deployment, trace flags, arbitrary SOQL, `AsyncApexJob` monitoring, or log upload. Debug logging controls intentionally remain local-only. The Worker validates Salesforce log IDs, caps filter length, validates date filters, normalizes the result shape, and returns generic errors without echoing Salesforce response bodies.
+
+The OAuth environment is an explicit allowlist: `production` uses `login.salesforce.com` (or the reviewed production login override), and `sandbox` uses `test.salesforce.com`. No user-supplied Salesforce host is accepted. This keeps the Workbench-style environment choice simple without turning the relay into an open redirect or arbitrary-host token exchange.
 
 The Worker sends `Cache-Control: no-store`, `Pragma: no-cache`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer`. CORS permits only the exact configured GitHub Pages origin and the two allowed methods needed by the relay. It does not use `*` with authenticated requests.
 

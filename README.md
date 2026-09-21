@@ -119,9 +119,12 @@ Use a public-client Salesforce External Client App or Connected App with PKCE en
 ### Hosted authorization
 
 1. Open [the hosted site](https://jcd1991.github.io/sflens/).
-2. Click **Authorize in Salesforce**.
-3. Complete Salesforce’s normal sign-in and consent screen.
-4. SF Lens loads recent `ApexLog` summaries and automatically opens the most recent available log.
+2. Click **Connect Salesforce**.
+3. Choose **Production / Developer Org** or **Sandbox**.
+4. Complete Salesforce’s normal sign-in and consent screen.
+5. SF Lens loads recent `ApexLog` summaries and automatically opens the most recent available log.
+
+No Chrome extension, browser allowlist, local bridge, or per-org CORS configuration is required. SF Lens uses the hosted relay to complete the OAuth handoff and keeps the Salesforce access token off the browser. If you do not connect an org, choose **Continue in Demo** to explore the product with a synthetic, fully local fixture.
 
 The hosted connection reads `ApexLog` summaries and bodies through the relay. It does not enable trace flags, modify records, deploy metadata, execute Apex, or store logs. The relay session is short-lived and held in volatile Worker memory; users may need to authorize again after a session expires or the Worker is recycled.
 
@@ -248,9 +251,9 @@ SF Lens does not provide a hosted log archive, shared backend, automatic replay,
 
 For Hosted Connect, confirm the relay is deployed, its Salesforce client ID secret is set, and the Salesforce app callback matches the relay callback URL. For Local Connect, confirm that the local bridge is still running and that its allowed origins include the page you opened.
 
-### `ERR_BLOCKED_BY_CLIENT` during Hosted Connect
+### Salesforce authorization does not return to SF Lens
 
-Some browser privacy or security extensions block Cloudflare Worker or Salesforce hostnames before the request reaches SF Lens. If the hosted page loads but the OAuth handoff is blocked, allowlist only `sflens-relay.eventyo.com`, `login.salesforce.com`, and the authorized org host (for example, `your-domain.my.salesforce.com`) in that extension, or retry in a clean browser profile. Do not disable browser security globally. The relay’s `/health` response is a safe way to distinguish a browser-side block from a server outage. A browser page that says `ERR_BLOCKED_BY_CLIENT` is a local browser-policy block, not a Salesforce callback or CORS failure.
+The hosted flow does not require a Chrome extension, browser allowlist, local bridge, or per-org CORS setting. Retry from the same Salesforce sign-in session or a clean browser tab. If the relay is unavailable, choose **Continue in Demo** and report the time of the failure so the relay health and callback configuration can be checked. A browser page that says `ERR_BLOCKED_BY_CLIENT` is a local browser-policy block, not a Salesforce callback or CORS failure; SF Lens cannot override a browser policy.
 
 ### `Hosted authorization is not configured`
 
