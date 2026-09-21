@@ -488,6 +488,10 @@ main {
   padding: 24px;
   box-shadow: 0 20px 70px #0008;
 }
+.auth-modal {
+  width: min(500px, 100%);
+  padding: 28px;
+}
 .modal h3 {
   margin: 0 0 8px;
 }
@@ -495,6 +499,115 @@ main {
   color: #8997a9;
   font-size: 12px;
   line-height: 1.5;
+}
+.auth-lead {
+  margin: 0 0 18px;
+}
+.auth-trust {
+  display: grid;
+  gap: 5px;
+  padding: 12px 13px;
+  background: #0c1718;
+  border: 1px solid #24463b;
+  border-radius: 7px;
+  color: #91a99f;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.auth-trust b {
+  color: #62e6a7;
+  font-size: 11px;
+}
+.auth-trust b span {
+  margin-right: 6px;
+}
+.auth-section-label {
+  margin: 22px 0 8px;
+  color: #dbe4ef;
+  font-size: 11px;
+  font-weight: 700;
+}
+.auth-options {
+  display: grid;
+  gap: 8px;
+}
+.modal .auth-option,
+.modal .demo-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 14px;
+  text-align: left;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+}
+.modal .auth-option.active {
+  color: #e9f3ee;
+  background: #14241f;
+  border-color: #397c61;
+}
+.modal .auth-option:hover:not(:disabled),
+.modal .demo-option:hover {
+  transform: translateY(-1px);
+  border-color: #62e6a7;
+  background: #193028;
+}
+.auth-option > span,
+.demo-option > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.auth-option strong,
+.demo-option strong {
+  color: #f2f6fa;
+  font-size: 13px;
+}
+.auth-option small,
+.demo-option small {
+  color: #8fa298;
+  font-size: 10px;
+  font-weight: 400;
+}
+.auth-option > b,
+.demo-option > b {
+  flex: 0 0 auto;
+  color: #62e6a7;
+  font-size: 17px;
+  font-weight: 400;
+}
+.auth-option:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0;
+  color: #617185;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: #24303e;
+}
+.modal .demo-option {
+  color: #b9c5d1;
+  background: #101721;
+  border-color: #2a3848;
+}
+.modal .demo-option strong {
+  color: #d8e0e9;
+}
+.modal .demo-option small {
+  color: #78899d;
 }
 .modal label {
   display: block;

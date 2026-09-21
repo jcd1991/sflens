@@ -954,18 +954,28 @@ export function App() {
       )}
       {connectOpen && (
         <div className="modal-backdrop">
-          <div className="modal">
-            <h3>Connect Salesforce</h3>
-            <p>{isHostedPage() ? "Choose your Salesforce environment. Salesforce handles sign-in and consent, then SF Lens loads recent read-only ApexLogs." : "Authorize SF Lens to read existing ApexLogs from your Salesforce org. Salesforce will show its normal login and consent screen, then return you here."}</p>
-            <div className="ci-status"><b>Secure · read-only · no hosted log archive</b><span>{hostedRelayUrl ? "The relay keeps only a short-lived access token in volatile memory, never stores logs, and sends bounded log data to this browser for local redaction before display or export." : isHostedPage() ? "SF Lens requests API access, keeps the access token only in this tab’s memory, and redacts logs before display or export." : "Your credentials stay with Salesforce and the local bridge. Logs are processed in this browser session and never sent to a hosted service."}</span></div>
+          <div className="modal auth-modal" role="dialog" aria-modal="true" aria-labelledby="connect-title">
+            <h3 id="connect-title">Connect to Salesforce</h3>
+            <p className="auth-lead">Sign in to inspect recent debug logs from an org. Salesforce handles authentication and consent, then SF Lens loads only read-only ApexLogs.</p>
+            <div className="auth-trust"><b><span>●</span> Secure and read-only</b><span>{hostedRelayUrl ? "Your password stays with Salesforce. The hosted relay keeps only a short-lived session and never stores log bodies." : isHostedPage() ? "Your password stays with Salesforce. This browser-only path keeps the access token in this tab and never stores log bodies." : "Your credentials stay with Salesforce and the local bridge. Logs are processed in this browser session and never sent to a hosted service."}</span></div>
             {isHostedPage() && !hostedRelayUrl && !browserClientId && <small className="error">Hosted authorization is not configured on this deployment yet. Continue in Demo mode or run SF Lens locally.</small>}
-            <div className="modal-actions">
-              <button onClick={showDemo}>Continue in Demo</button>
-              {isHostedPage() ? <>
-                <button className="active" onClick={() => void startHostedAuthorization("production")} disabled={!hostedRelayUrl && !browserClientId}>Production / Developer Org</button>
-                <button className="active" onClick={() => void startHostedAuthorization("sandbox")} disabled={!hostedRelayUrl && !browserClientId}>Sandbox</button>
-              </> : <button className="active" onClick={connect}>Authorize Salesforce</button>}
-            </div>
+            {isHostedPage() ? <>
+              <div className="auth-section-label">Choose an environment</div>
+              <div className="auth-options">
+                <button className="auth-option active" onClick={() => void startHostedAuthorization("production")} disabled={!hostedRelayUrl && !browserClientId}>
+                  <span><strong>Production / Developer Org</strong><small>Log in with your standard Salesforce account</small></span><b aria-hidden="true">→</b>
+                </button>
+                <button className="auth-option active" onClick={() => void startHostedAuthorization("sandbox")} disabled={!hostedRelayUrl && !browserClientId}>
+                  <span><strong>Sandbox</strong><small>Connect to a sandbox or test environment</small></span><b aria-hidden="true">→</b>
+                </button>
+              </div>
+              <div className="auth-divider"><span>or</span></div>
+              <button className="demo-option" onClick={showDemo}><span><strong>Continue in Demo mode</strong><small>Explore SF Lens with a synthetic log — no sign-in required</small></span><b aria-hidden="true">→</b></button>
+            </> : <>
+              <div className="auth-options"><button aria-label="Authorize Salesforce" className="auth-option active" onClick={connect}><span><strong>Authorize Salesforce</strong><small>Read existing ApexLogs through the local bridge</small></span><b aria-hidden="true">→</b></button></div>
+              <div className="auth-divider"><span>or</span></div>
+              <button className="demo-option" onClick={showDemo}><span><strong>Continue in Demo mode</strong><small>Explore SF Lens with a synthetic log — no sign-in required</small></span><b aria-hidden="true">→</b></button>
+            </>}
             {status && <small className="error">{status}</small>}
           </div>
         </div>
